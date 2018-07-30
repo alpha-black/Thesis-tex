@@ -423,12 +423,17 @@ k8s         & Kubernetes \\
 %% Leave page number of the first page empty
 %% 
 \thispagestyle{empty}
-In the telecommunication industry, the network node functions have traditionally run on operator proprietary hardware which are dedicated for a specific purpose, commonly known as ASICs (Application Specific Integrated Circuits). This has gradually led to long development and deployment cycles, higher cost of operation, etc., thereby hindering rapid technological advancement in the field. Slowly the network node functions are being replaced by virtualized software solutions that can run on generic computing hardware; thereby addressing the above problems and making the network more flexible. This network architecture where virtualized software solutions are chained or combined to form network node functions is called Network Function Virtualization (NFV).
+In telecommunication industry, the network node functions have traditionally run on operator proprietary hardware which are dedicated for a specific purpose, known as ASICs (Application Specific Integrated Circuits). This has led to long development and deployment cycles, higher cost of operation, etc., thereby hindering rapid technological advancement in the field. Slowly the network node functions are being replaced by virtualized software solutions that can run on generic computing hardware; thereby addressing the above problems and making the network more flexible. This network architecture where virtualized software solutions are chained or combined to form network node functions is called Network Function Virtualization (NFV).
 
-In the NFV nomenclature, the software implementation of the network node functions or sub-functions are referred to as Virtual Network Functions (VNF). For instance, a network firewall, a DHCP server or a NAT function. The current de-facto VNF implementations run on virtual machines such as a Kernel-based Virtual Machine (KVM). But with the recent advent of containers and their gaining popularity due to some of their obvious advantages over virtual machines, there is a need to explore their suitability in NFV. Containers are comparatively light weight and utilize the same host kernel when compared to virtual machines. However, containers are still quite new in a NFV scenario and have quite some issues to be explored and addressed [][].
+In the NFV nomenclature, the software implementation of the network node functions or sub-functions are referred to as Virtual Network Functions (VNF). For instance, a network firewall, a DHCP server or a NAT function. The current de-facto VNF implementations run on virtual machines such as a Kernel-based Virtual Machine (KVM). But with the recent advent of containers and their gaining popularity due to some of their obvious advantages over virtual machines, there is a need to explore their suitability in NFV. Containers are comparatively light weight and utilize the same host kernel when compared to virtual machines. They can be booted up with minimum latency [] which implies, container based deployments focus on on-demand spawning of the containerized application. For example, a NAT application running on a container could be spawned up based on the number of clients utilizing it, with one container handling one or a fixed number of clients. However, utilizing containers in NFV is still in its nascent stages and there are quite a few issues to be explored and addressed [][].
 %% [ https://www.redhat.com/blog/verticalindustries/is-nfv-ready-for-containers/ ], there are several on going studies and  containerization in NFV is still in a nascent stage and  As listed in [ https://www.ietf.org/proceedings/94/slides/slides-94-nfvrg-11.pdf ], some of the key features needed in NFV environment are performance, portability/scalability and isolation. 
 
-The scope of the thesis is to explore networking in containers, both in a standalone environment and also in an container orchestrated environment, utilizing DPDK for fast packet processing and SR-IOV for hardware vitalization, since they are of at most importance in NFV. Also, whenever possible, for a better understanding of the performance gain with DPDK/SR-IOV, a comparative study with and without them is done. In the thesis, for some of the basic tools, only the industry de-facto solutions are considered, such as  Docker for container run time and Kubernetes for container orchestration. Keeping these constant, the exploration is on the various networking solutions feasible for them.
+The scope of the thesis is to focus on the networking aspect of utilizing containers in NFV. An import requirement in NFV is fast packet processing when compared to normal container based deployments. The thesis explores container networking both in a standalone environment and also in a container orchestrated environment, utilizing Data Plane Development Kit (DPDK) for fast packet processing and Single Root IO Virtualization (SR-IOV) for hardware virtualization. A container orchestrated environment could be visualized as a cloud of multiple servers with multiple containers spawned on request and killed after serving the request.
+
+In an orchestrated environment, there could be multiple applications running simultaneously and utilizing DPDK. Hugepages which are an essential requirement for higher performance in  
+Another important aspect kept in mind while addressing the networking solution is 
+
+Whenever possible, for a better grasp of the performance measurements with DPDK/SR-IOV, a comparative study with and without them is done. For some of the basic tools, only the industry de-facto solutions are considered, such as  Docker for container run-time and Kubernetes for container orchestration. Keeping these constant, the exploration is on the various networking solutions feasible for them.
 
 
 The thesis also tries to improve the performance of multiple DPDK based applications running on a single host utilizing
@@ -470,7 +475,16 @@ The thesis also tries to improve the performance of multiple DPDK based applicat
 
 \clearpage
 \section{Core - Implementation, experiments}
-
+\subsection{First step - Multiple interfaces}
+Experiment with SR-IOV VF exposed to container and DPDK testpmd running on it.
+\subsection{Building a Kubernetes cluster}
+Using MAAS for building a cluster from bare metal.
+Two approaches to deploying k8s - juju and kubeadm
+\subsection{Kubernetes with multus}
+Intel Node Feature Discovery
+\subsection{OvS-DPDK and container}
+\subsection{Kubernetes with OvN}
+Exposing external interface and routing within
 \clearpage
 \section{Results}
 
