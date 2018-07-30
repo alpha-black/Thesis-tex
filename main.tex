@@ -423,24 +423,27 @@ k8s         & Kubernetes \\
 %% Leave page number of the first page empty
 %% 
 \thispagestyle{empty}
-	Problem statement
-Traditionally network functions have been run on on operator proprietary hardware which made them difficult to scale. Deploying a new node or network function would require more space, power, etc. Moreover, this was a hurdle in technological innovation. Replacing existing solution was expensive and a laborious task. With this need to remove hardware specific requirements, the network functions  are being replaced by virtualized solutions. This is Network Function Virtualization (NFV). NFV makes a network more agile, easy to manage and scale and less expensive to deploy and run.
+In the telecommunication industry, the network node functions have traditionally run on operator proprietary hardware which are dedicated for a specific purpose, commonly known as ASICs (Application Specific Integrated Circuits). This has gradually led to long development and deployment cycles, higher cost of operation, etc., thereby hindering rapid technological advancement in the field. Slowly the network node functions are being replaced by virtualized software solutions that can run on generic computing hardware; thereby addressing the above problems and making the network more flexible. This network architecture where virtualized software solutions are chained or combined to form network node functions is called Network Function Virtualization (NFV).
 
-Such a virtualized architecture allows many small network functions to be run on even a single host, though in reality there are multiple hosts or a cluster.  These virtualized software are Virtual Network Functions (VNF) that make up Network Functions in a NFV. VNFs could be an application such as Firewall or NAT running on a virtual machine or a container.
+In the NFV nomenclature, the software implementation of the network node functions or sub-functions are referred to as Virtual Network Functions (VNF). For instance, a network firewall, a DHCP server or a NAT function. The current de-facto VNF implementations run on virtual machines such as a Kernel-based Virtual Machine (KVM). But with the recent advent of containers and their gaining popularity due to some of their obvious advantages over virtual machines, there is a need to explore their suitability in NFV. Containers are comparatively light weight and utilize the same host kernel when compared to virtual machines. However, containers are still quite new in a NFV scenario and have quite some issues to be explored and addressed [][].
+%% [ https://www.redhat.com/blog/verticalindustries/is-nfv-ready-for-containers/ ], there are several on going studies and  containerization in NFV is still in a nascent stage and  As listed in [ https://www.ietf.org/proceedings/94/slides/slides-94-nfvrg-11.pdf ], some of the key features needed in NFV environment are performance, portability/scalability and isolation. 
 
-Some obvious requirements in such an environment for these VNFs are fast processing of packets and good networking between the virtualized software. 
+The scope of the thesis is to explore networking in containers, both in a standalone environment and also in an container orchestrated environment, utilizing DPDK for fast packet processing and SR-IOV for hardware vitalization, since they are of at most importance in NFV. Also, whenever possible, for a better understanding of the performance gain with DPDK/SR-IOV, a comparative study with and without them is done. In the thesis, for some of the basic tools, only the industry de-facto solutions are considered, such as  Docker for container run time and Kubernetes for container orchestration. Keeping these constant, the exploration is on the various networking solutions feasible for them.
 
-	Aim, scope and thesis overview
-This thesis is an attempt to understand and exploit various existing fast packet processing solutions in a containerized environment from a NFV perspective. There is a comparative performance study using DPDK on  solutions such SR-IOV and OvS. 
 
-While carrying out the thesis, scalability and generic nature of the solution have been kept an important consideration. Some questions that need answering are : 
-	- Hugepage isolation in containers, freeing of hugepage (on failure of DPDK application?) . It is important to consider multiple DPDK based apps running on the same host [2]
-	- SR-IOV DPDK CNI plugin supports exposing only one VF to a containerize
-	- The same plug-in uses DPDK on VF on the host and just exposes it to container
+The thesis also tries to improve the performance of multiple DPDK based applications running on a single host utilizing
+
+
+%%While carrying out the experiments, scalability and generic nature of the solution have been given important consideration.
+
+
+%%Some questions that need answering are : 
+	%%- Hugepage isolation in containers, freeing of hugepage (on failure of DPDK application?) . It is important to consider multiple DPDK based apps running on the same host [2]
+	%%- The same plug-in uses DPDK on VF on the host and just exposes it to container
 	
-Whenever any decision on technologies to be used is taken, it is done so with NFV consideration. Also, for container orchestration, Kubernetes is de-facto solution and is the only considered one in the thesis.
+%%Whenever any decision on technologies to be used is taken, it is done so with NFV consideration. Also, for container orchestration, Kubernetes is de-facto solution and is the only considered one in the thesis.
 
-The next section covers the background in the field with explanations of the most used technologies  with some explanation on the evolution of some of them. The we go into the experimentation part with some implementation addressing gaps or upgrades on existing solutions making them more scalable or generic.
+%%The next section covers the background in the field with explanations of the most used technologies  with some explanation on the evolution of some of them. The we go into the experimentation part with some implementation addressing gaps or upgrades on existing solutions making them more scalable or generic.
 
 \clearpage
 
