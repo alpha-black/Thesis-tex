@@ -423,21 +423,18 @@ k8s         & Kubernetes \\
 %% Leave page number of the first page empty
 %% 
 \thispagestyle{empty}
-In telecommunication industry, the network node functions have traditionally run on operator proprietary hardware which are dedicated for a specific purpose, known as ASICs (Application Specific Integrated Circuits). This has led to long development and deployment cycles, higher cost of operation, etc., thereby hindering rapid technological advancement in the field. Slowly the network node functions are being replaced by virtualized software solutions that can run on generic computing hardware; thereby addressing the above problems and making the network more flexible. This network architecture where virtualized software solutions are chained or combined to form network node functions is called Network Function Virtualization (NFV).
+In telecommunication industry, the network node functions have traditionally run on operator proprietary hardware which are dedicated for a specific purpose, known as ASICs (Application Specific Integrated Circuits). This has led to long development and deployment cycles, higher cost of operation, etc., thereby hindering rapid technological advancement in the field. Slowly the network node functions are being replaced by virtualized software solutions that can run on generic computing hardware; thereby addressing the above problems and making the network more flexible. This network architecture where virtualized software solutions are chained together or combined to form network node functions is called Network Function Virtualization (NFV).
 
 In the NFV nomenclature, the software implementation of the network node functions or sub-functions are referred to as Virtual Network Functions (VNF). For instance, a network firewall, a DHCP server or a NAT function. The current de-facto VNF implementations run on virtual machines such as a Kernel-based Virtual Machine (KVM). But with the recent advent of containers and their gaining popularity due to some of their obvious advantages over virtual machines, there is a need to explore their suitability in NFV. Containers are comparatively light weight and utilize the same host kernel when compared to virtual machines. They can be booted up with minimum latency [] which implies, container based deployments focus on on-demand spawning of the containerized application. For example, a NAT application running on a container could be spawned up based on the number of clients utilizing it, with one container handling one or a fixed number of clients. However, utilizing containers in NFV is still in its nascent stages and there are quite a few issues to be explored and addressed [][].
 %% [ https://www.redhat.com/blog/verticalindustries/is-nfv-ready-for-containers/ ], there are several on going studies and  containerization in NFV is still in a nascent stage and  As listed in [ https://www.ietf.org/proceedings/94/slides/slides-94-nfvrg-11.pdf ], some of the key features needed in NFV environment are performance, portability/scalability and isolation. 
 
-The scope of the thesis is to focus on the networking aspect of utilizing containers in NFV. An import requirement in NFV is fast packet processing when compared to normal container based deployments. The thesis explores container networking both in a standalone environment and also in a container orchestrated environment, utilizing Data Plane Development Kit (DPDK) for fast packet processing and Single Root IO Virtualization (SR-IOV) for hardware virtualization. A container orchestrated environment could be visualized as a cloud of multiple servers with multiple containers spawned on request and killed after serving the request.
+The scope of the thesis is to focus on the networking aspect of utilizing containers in NFV. An import requirement in NFV is fast packet processing when compared to normal container based deployments. The thesis explores container networking both in a standalone environment and also in a container orchestrated environment, utilizing Data Plane Development Kit (DPDK) for fast packet processing and Single Root IO Virtualization (SR-IOV) for hardware virtualization.
 
-In an orchestrated environment, there could be multiple applications running simultaneously and utilizing DPDK. Hugepages which are an essential requirement for higher performance in  
-Another important aspect kept in mind while addressing the networking solution is 
+A container orchestrated environment could be visualized as a cloud of multiple servers with multiple containers spawned on request and killed after serving the request. A fast data path in this scenario would include DPDK supported interfaces that are exposed to the external network and also a fast packet forwarding within the cloud to reach the container of interest. When the orchestrator deploys a container, there are constraints to make sure that the fast data path is exposed to it. Such a networking requirement could be critical in NFV and finding a suitable generic solution to it is one of the key questions driving this thesis.
 
-Whenever possible, for a better grasp of the performance measurements with DPDK/SR-IOV, a comparative study with and without them is done. For some of the basic tools, only the industry de-facto solutions are considered, such as  Docker for container run-time and Kubernetes for container orchestration. Keeping these constant, the exploration is on the various networking solutions feasible for them.
+DPDK utilizes several techniques for better packet processing such as skipping the kernel network stack and running applications in userspace, using poll mode drivers instead interrupt driven ones, hugepages, Direct Memory Access (DMA) and others. Among them correct utilization of hugepages is an important aspect especially when multiple DPDK based applications are run simultaneously in the same host. Most of the current container run-time applications such as Docker,.. do not support hugepage isolation. It is possible that one application ends up consuming or pre-allocating all the hugepages. Addressing this drawback to support hugepage isolation in Docker is another key aspect of this thesis.
 
-
-The thesis also tries to improve the performance of multiple DPDK based applications running on a single host utilizing
-
+Whenever possible, for a better grasp of the performance measurements with DPDK/SR-IOV, a comparative study with and without them is done. For some of the basic tools, only the industry de-facto solutions are considered, such as  Docker for container run-time and Kubernetes for container orchestration. Keeping these constant, the exploration is on the various networking solutions feasible for them and other aspects described above.
 
 %%While carrying out the experiments, scalability and generic nature of the solution have been given important consideration.
 
@@ -448,10 +445,51 @@ The thesis also tries to improve the performance of multiple DPDK based applicat
 	
 %%Whenever any decision on technologies to be used is taken, it is done so with NFV consideration. Also, for container orchestration, Kubernetes is de-facto solution and is the only considered one in the thesis.
 
-%%The next section covers the background in the field with explanations of the most used technologies  with some explanation on the evolution of some of them. The we go into the experimentation part with some implementation addressing gaps or upgrades on existing solutions making them more scalable or generic.
+The next section in the thesis covers the related technologies utilized, their definitions and how they work. The motivation for them and in some cases their evolution. The third chapter is a prelude to the experimentation part which is chapter four.
 
 \clearpage
+\section{How stuffs work}
+This section describes the main technologies, tools and other components used in the thesis and how they work.
+\subsection{Data Plane Development Kit, DPDK}
+DPDK is a "set of libraries and drivers"[1] that enable fast packet processing. It is an open source software framework that can be used to build fast networking applications and is maintained by the Linux Foundation[2]. As compared to a normal kernel network stack, DPDK can provide about twenty five percent [3] improvement in packet processing speed.
 
+The driving factor behind the development of DPDK is to address the handling of extremely fast packet rates, especially in a communication network infrastructure, where the packet sizes are typically smaller and packet rates much higher. The average CPU cycles available for handling a packet is much less. For instance, a 10 Gigabit Ethernet card receiving packets of size 1024 bytes would receive 1.25 million packets per second. A CPU with 2GHz clock cycles handling these packets will have 1600 cycles per packet. For a packet size of 64 bytes, this would be 19.5 million packets per second and 102 cycles per packet. 
+
+DPDK utilizes a verity of techniques to address improve the packet processing. Primarily, it uses Poll Mode Drivers (PMD) instead of interrupt driver drivers to handle packets. In traditional packet handling, when a packet is received, the CPU does a context switching from the userspace process to kernel, runs the Interrupt Service Routine (ISR) and switches back to userspace. This is a big overhead especially for higher packet rates. Poll Mode Drivers run on the userspace and use a dedicated CPU core to handle the traffic on one or multiple interfaces. DPDK uses pthread affinity to disable the kernel scheduler from utilizing those cores.
+
+DPDK utilizes hugepages. Hugepages simply imply bigger page size. The standard Linux page size is 4kB while hugepage size could be 2MB or 1GB. In a normal memory access, the virtual memory address needs to be translated to physical memory before it can be accessed. The critical factor affecting performance is the TLB hit. When bigger page sizes are used, there are fewer pages and higher probability of TLB hit.
+
+Software prefetching in addition to H/W prefetching. 
+
+Intel DDIO : Available only in some supported network cards. Network packets are directly put into L3 cache instead of being DMA'd into main memory.
+
+Cache alignment : Intel cache lines are 64bytes. Cache alignment increases performance. If data fetched from memory is put in different cache lines, it would require multiple cache fetches to retrieve the data. Alignment, putting in one cache line, decreases cache reads.
+
+DPDK uses Direct Memory Access to speed up packet buffer copying. Compared to a normal kernel network
+stack, when a packet is received, DPDK uses DMA to directly lift the buffer to user space. In traditional packet handling in the kernel stack involves copying of buffer multiple times such as, from the NIC buffer to kernel socket buffer (skbuf in Linux) and from there to the userspace. This reduces performance due to the copying overhead and also due to loss of localization of data leading to fewer cache hits. The method used in DPDK called zero-copy.
+
+Most of the DPDK components run on the userspace avoiding context switching altogether. The packets received on an interface are DMA'd directly to the poll mode drivers. 
+
+Modes of operation of a DPDK application - Run to completion. Each core is assigned a port or a set of ports. The core does the I/O specifically for that port. It accept the incoming packet, process it and send it out through the same port or set of ports. Pipeline model - One core is dedicated to just I/O. All packets received at this port and then sent to different cores using ring buffers. It is more complex and could result in packet order being not maintained.
+
+%% [1] “DPDK, Data Plane Development Kit”, Retrieved from dpdk.org
+%% [2] “Linux Foundation Projects”, Retrieved from https://www.linuxfoundation.org/projects/
+%% [3] https://builders.intel.com/university/networkbuilders/course/dpdk-101
+
+The main components of DPDK are the core libraries, Poll Mode Drivers for various supported Network Interface Cards (NICs) and other libraries that deal with packet classification, Quality of Service (QoS) and specific to the different platforms [4]. All of these libraries run on the userpace. Also, apart from theses, DPDK uses PCI drivers in the kernel such as IGB-UIO or VFIO-PCI that do basic functionality. When an interface is bound to DPDK, it is detached from the normal kernel driver and attached to one of these DPDK drivers in the kernel.
+
+%% http://doc.dpdk.org/guides-16.04/prog_guide/overview.html
+
+The core libraries in DPDK has an Environment Abstraction Layer (EAL) which hides or abstracts the platform from the libraries and applications running above it. This also deals with memory allocation in huge pages and PCI related buffer handling. DPDK does not allocate memory at run-time but rather pre-allocates memory during initialization. For packet processing, use memory from pool. Return after use. The libraries related to allocating pool of memory (Mempool) consisting of memory buffer (Mbuf) and lockless queues or ring buffers for handling them are part of the core library.
+
+\subsection{Single Root IO Virtualization, SR-IOV}
+SR-IOV is a virtualization of a PCI Express (PCIe) device, or in other words, a NIC, into multiple virtual devices that can be directly assigned to an instance of a virtual machine or container. It is hardware virtualization with SR-IOV has a Physical Function (PF) which acts like a normal PCIe device and multiple Virtual Functions (VF) that act like lightweight PCIe devices. In a virtual machine context, the host machine kernel can be bypassed and the packets can flow directly between the VF and PF.
+
+Consider the scenario where one host is running multiple Virtual Machines (VMs) and a NIC receiving and transmitting packets for all those VMs. When a packet is received by the NIC, it triggers an interrupt to the CPU core that is assigned for handling NIC interrupts. This core services the request and exmines the packet. Based on the MAC or VLAN, it triggers another interrupt on the core that is servicing the virtual machine. This is an overhead since there are multiple interrupt handling in the host even before the packet is transferred to the guest operating system. Moreover, when the packet rate is high, one core handling all the packets for all the VMs can be a severe bottle neck. As an enhancement to this, Intel 
+\subsection{Container}
+\subsection{Kubernetes}
+Kubernetes is container orchestration. It could be 
+\subsection{Open vSwitch}
 \section{Background}
 	History, theory, current practices
 	Definitions
