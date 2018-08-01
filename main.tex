@@ -448,7 +448,7 @@ Whenever possible, for a better grasp of the performance measurements with DPDK/
 The next section in the thesis covers the related technologies utilized, their definitions and how they work. The motivation for them and in some cases their evolution. The third chapter is a prelude to the experimentation part which is chapter four.
 
 \clearpage
-\section{How stuffs work}
+\section{How stuff works}
 This section describes the main technologies, tools and other components used in the thesis and how they work.
 \subsection{Data Plane Development Kit, DPDK}
 DPDK is a "set of libraries and drivers"[1] that enable fast packet processing. It is an open source software framework that can be used to build fast networking applications and is maintained by the Linux Foundation[2]. As compared to a normal kernel network stack, DPDK can provide about twenty five percent [3] improvement in packet processing speed.
@@ -483,10 +483,83 @@ The main components of DPDK are the core libraries, Poll Mode Drivers for variou
 The core libraries in DPDK has an Environment Abstraction Layer (EAL) which hides or abstracts the platform from the libraries and applications running above it. This also deals with memory allocation in huge pages and PCI related buffer handling. DPDK does not allocate memory at run-time but rather pre-allocates memory during initialization. For packet processing, use memory from pool. Return after use. The libraries related to allocating pool of memory (Mempool) consisting of memory buffer (Mbuf) and lockless queues or ring buffers for handling them are part of the core library.
 
 \subsection{Single Root IO Virtualization, SR-IOV}
-SR-IOV is a virtualization of a PCI Express (PCIe) device, or in other words, a NIC, into multiple virtual devices that can be directly assigned to an instance of a virtual machine or container. It is hardware virtualization with SR-IOV has a Physical Function (PF) which acts like a normal PCIe device and multiple Virtual Functions (VF) that act like lightweight PCIe devices. In a virtual machine context, the host machine kernel can be bypassed and the packets can flow directly between the VF and PF.
+SR-IOV is the hardware virtualization of a PCI Express (PCIe) device, or specifically, a NIC, into multiple virtual devices that can be directly assigned to an instance of a virtual machine or a container. SR-IOV has a Physical Function (PF) which acts like a normal PCIe device and multiple Virtual Functions (VF) that act like quite lightweight but with dedicated Rx/Tx queues. In a virtual machine context, the host machine kernel can be bypassed and the packets can flow directly between the VF and PF.
 
-Consider the scenario where one host is running multiple Virtual Machines (VMs) and a NIC receiving and transmitting packets for all those VMs. When a packet is received by the NIC, it triggers an interrupt to the CPU core that is assigned for handling NIC interrupts. This core services the request and exmines the packet. Based on the MAC or VLAN, it triggers another interrupt on the core that is servicing the virtual machine. This is an overhead since there are multiple interrupt handling in the host even before the packet is transferred to the guest operating system. Moreover, when the packet rate is high, one core handling all the packets for all the VMs can be a severe bottle neck. As an enhancement to this, Intel 
+Consider the scenario where one host is running multiple Virtual Machines (VM) and a NIC receiving and transmitting packets for all those VMs. Without any hardware virtualization, when a packet is received by the NIC, it triggers an interrupt to the CPU core that is assigned for handling NIC interrupts. This core services the request and examines the packet. Based on the MAC address or VLAN tag, it forwards the packet to the correct VM by triggering another interrupt on the core that is servicing the virtual machine. This is an overhead since there are multiple interrupt handling in the host even before the packet is transferred to the guest operating system and also there is an extra copy of the packet from the host to the VM. Moreover, when the packet rate is high, one core handling all the packets for all the VMs can be a severe bottle neck for a high packet rate. As an enhancement to this, Intel proposed VMDq [1] technology which has separate packet queues for each core. The received packets are put into one of the queues based on the destination MAC or VLAN. Each core services its packet queue by copying the buffer to the VM. There is distribution of work here and a good performance enhancement. An even further enhancement is SR-IOV in which the NIC has separate packet queues for each Virtual Function. When a packet is received, it is sorted to one of the VF queues based on the destination MAC address or VLAN tag. The VF then pushes the packet up the virtual machine directly without involving the CPU using Direct Memory Access (DMA). SR-IOV needs CPU virtualization technology such as Intel VT-d or AMD-Vi enabled for the DMA to the virtual machine.
+
+%% [1] https://www.intel.com/content/www/us/en/virtualization/vmdq-technology-paper.html
 \subsection{Container}
+A container is an isolated execution environment which includes any necessary run time dependencies and libraries needed for the application that it packages. It could be thought of as a software that runs on the host with its own slice of the system resources such as network, file systems, user groups, etc. but isolated from other processes. Containers are built on namespaces and control groups which are a part of the Linux kernel.
+
+As per Linux man pages, namespace is an abstraction layer on "global system resources" that provides isolated instance of the resource to the processes that are members of the namespace. Linux provides six different namespaces, Inter Process Communication (IPC) including POSIX and System V message queues, Network, Mount, Process Identifier (PID), User and UTS [1]. With network namespace, the processes in the new namespace can add new network devices without them being available to host network namespace and vice versa. Similarly, with mount namespace, different file systems can be mounted and processes within this namespace cannot access host file system. Namespaces can be created using Linux system call unshare. The context of namespaces that every process belongs to stored in a sub-folder under proc file system as shown below.
+%% [1] Linux man paages; man 7 namespaces; man unshare
+\begin{verbatim}
+$ ls -l /proc/$$/ns
+total 0
+lrwxrwxrwx 1 user group 0 elo    1 13:47 cgroup -> cgroup:[4026531835]
+lrwxrwxrwx 1 user group 0 elo    1 13:47 ipc -> ipc:[4026531839]
+lrwxrwxrwx 1 user group 0 elo    1 13:47 mnt -> mnt:[4026531840]
+lrwxrwxrwx 1 user group 0 elo    1 13:47 net -> net:[4026532009]
+lrwxrwxrwx 1 user group 0 elo    1 13:47 pid -> pid:[4026531836]
+lrwxrwxrwx 1 user group 0 elo    1 13:47 pid_for_children -> pid:[4026531836]
+lrwxrwxrwx 1 user group 0 elo    1 13:47 user -> user:[4026531837]
+lrwxrwxrwx 1 user group 0 elo    1 13:47 uts -> uts:[4026531838]
+
+\end{verbatim}
+
+Below is an example of using namespaces to create an isolated environment. The current process id in a bash shell can be found out using "\$\$". Then use unshare command to create a new namespace. Here the arguments "pid" and "net" signifies new namespaces for process ids and network. The argument "mount-proc" tells the command to mount the proc file system. The "fork" option makes a fork of the current process before creating the namespace and attaching the child process to it. 
+
+\begin{verbatim}
+$ echo $$ 
+8009
+$ unshare --fork --pid --net --mount-proc bash
+root:~# ip l
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+root:~# ps -aef
+UID        PID  PPID  C STIME TTY          TIME CMD
+root         1     0  0 13:37 pts/26   00:00:00 bash
+root        12     0  0 13:44 pts/30   00:00:00 -bash
+root        32     1  0 13:52 pts/26   00:00:00 ps -aef
+root:~#                                  
+\end{verbatim}
+
+\begin{verbatim}
+$ ps -aef | grep bash | grep root | awk '{print $1"\t"$2"\t"$3"\t"$8}'
+root     31215  8009    sudo
+root     31294 31215    sudo
+root     31295 31294    unshare
+root     31296 31295    bash
+
+$ nsenter -m -u -i -n -p  -t 31296
+root:/# ps -aef
+UID        PID  PPID  C STIME TTY          TIME CMD
+root         1     0  0 13:37 pts/26   00:00:00 bash
+root        12     0  0 13:44 pts/30   00:00:00 -bash
+root        30    12  0 13:45 pts/30   00:00:00 ps -aef
+root:/# 
+
+\end{verbatim}
+
+Add a network bridge within the new namespace and check outside.
+
+\begin{verbatim}
+root:~# brctl addbr asd
+root:~# ip l
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: asd: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 4a:18:f1:3c:9c:b2 brd ff:ff:ff:ff:ff:ff
+\end{verbatim}
+
+Control groups on the other hand are useful in limiting the resource consumption. All processes that are a part of a particular control group can be limited to utilization of a system resource.
+
+Any description of containers is incomplete without a comparison to virtual machines. A virtual machine emulates an entire machine. There is a hypervisor that runs on the host machine that emulates the underlying hardware. Then a complete operating system running on top of it. The advantage of virtual machine is that it is completely isolated from the host machine. The run environment can be guaranteed in spite of the underlying hardware and operating system. While at the same time, virtual machines can be heavy weight and resource consuming. In contrast, the container essentially runs completely on the host. It uses namespaces and control groups for isolation of the container from the host. As a result, they are much more easy to boot up, lightweight and picking up in popularity when compared to virtual machines [].
+
+%% []
+
+is the easy replication of the development environment in scenarios such as in deployment. Containers have become de-facto standard for application packaging/deployment and there is a need to explore fast data processing solutions in a containerized environment.
+\subsubsection{Container Networking Interface}
 \subsection{Kubernetes}
 Kubernetes is container orchestration. It could be 
 \subsection{Open vSwitch}
@@ -499,15 +572,6 @@ Kubernetes is container orchestration. It could be
 
 	Considerations
 		Packet generators
-%%
-%% Three levels of hierarchy in sectioning should be enough
-
-\subsection*{Containers}
-\subsection*{Container orchestration, Kubernetes}
-\subsection*{Data Plane Development Kit}
-\subsection*{Single Root IO Virtualization}
-
-\subsection*{Open vSwitch}
 \clearpage
 \section{Research material and methods}
 
