@@ -167,6 +167,14 @@
 %\documentclass[finnish, 12pt, a4paper, elec, dvips, online]{aaltothesis}
 
 \usepackage{graphicx}
+\usepackage{spverbatim}
+\usepackage{listings}
+\lstset{frame=tb,
+  basicstyle={\ttfamily}, 
+  language=shell,
+  breaklines=true,
+  tabsize=4
+}
 
 %% Math fonts, symbols, and formatting; these are usually needed
 \usepackage{amsfonts,amssymb,amsbsy}
@@ -485,7 +493,7 @@ The core libraries in DPDK has an Environment Abstraction Layer (EAL) which hide
 \subsection{Single Root IO Virtualization, SR-IOV}
 SR-IOV is the hardware virtualization of a PCI Express (PCIe) device, or specifically, a NIC, into multiple virtual devices that can be directly assigned to an instance of a virtual machine or a container. SR-IOV has a Physical Function (PF) which acts like a normal PCIe device and multiple Virtual Functions (VF) that act like quite lightweight but with dedicated Rx/Tx queues. In a virtual machine context, the host machine kernel can be bypassed and the packets can flow directly between the VF and PF.
 
-Consider the scenario where one host is running multiple Virtual Machines (VM) and a NIC receiving and transmitting packets for all those VMs. Without any hardware virtualization, when a packet is received by the NIC, it triggers an interrupt to the CPU core that is assigned for handling NIC interrupts. This core services the request and examines the packet. Based on the MAC address or VLAN tag, it forwards the packet to the correct VM by triggering another interrupt on the core that is servicing the virtual machine. This is an overhead since there are multiple interrupt handling in the host even before the packet is transferred to the guest operating system and also there is an extra copy of the packet from the host to the VM. Moreover, when the packet rate is high, one core handling all the packets for all the VMs can be a severe bottle neck for a high packet rate. As an enhancement to this, Intel proposed VMDq [1] technology which has separate packet queues for each core. The received packets are put into one of the queues based on the destination MAC or VLAN. Each core services its packet queue by copying the buffer to the VM. There is distribution of work here and a good performance enhancement. An even further enhancement is SR-IOV in which the NIC has separate packet queues for each Virtual Function. When a packet is received, it is sorted to one of the VF queues based on the destination MAC address or VLAN tag. The VF then pushes the packet up the virtual machine directly without involving the CPU using Direct Memory Access (DMA). SR-IOV needs CPU virtualization technology such as Intel VT-d or AMD-Vi enabled for the DMA to the virtual machine.
+Consider the scenario where one host is running multiple Virtual Machines (VM) and a NIC receiving and transmitting packets for all those VMs. Without any hardware virtualization, when a packet is received by the NIC, it triggers an interrupt to the CPU core that is assigned for handling NIC interrupts. This core services the request and examines the packet. Based on the MAC address or VLAN tag, it forwards the packet to the correct VM by triggering another interrupt on the core that is servicing the virtual machine. This is an overhead since there are multiple interrupt handling in the host even before the packet is transferred to the guest operating system and also there is an extra copy of the packet from the host to the VM. Moreover, when the packet rate is high, one core handling all the packets for all the VMs can be a severe bottle neck for a high packet rate. As an enhancement to this, Intel proposed VMDq [1] technology which has separate packet queues for each core. The received packets are put into one of the queues based on the destination MAC or VLAN. Each core services its packet queue by copying the buffer to the VM. There is distribution of work here and a good performance enhancement. An even further enhancement is SR-IOV in which the NIC has separate packet queues for each Virtual Function. When a packet is received, it is sorted to one of the VF queues based on the destination MAC address or VLAN tag. The VF then pushes the packet up the virtual machine directly without involving the CPU using Direct Memory Access (DMA). SR-IOV needs CPU I/O virtualization technology such as Intel VT-d or AMD-Vi enabled for the DMA to the virtual machine.
 
 %% [1] https://www.intel.com/content/www/us/en/virtualization/vmdq-technology-paper.html
 \subsection{Container}
@@ -493,38 +501,36 @@ A container is an isolated execution environment which includes any necessary ru
 
 As per Linux man pages, namespace is an abstraction layer on "global system resources" that provides isolated instance of the resource to the processes that are members of the namespace. Linux provides six different namespaces, Inter Process Communication (IPC) including POSIX and System V message queues, Network, Mount, Process Identifier (PID), User and UTS [1]. With network namespace, the processes in the new namespace can add new network devices without them being available to host network namespace and vice versa. Similarly, with mount namespace, different file systems can be mounted and processes within this namespace cannot access host file system. Namespaces can be created using Linux system call unshare. The context of namespaces that every process belongs to stored in a sub-folder under proc file system as shown below.
 %% [1] Linux man paages; man 7 namespaces; man unshare
-\begin{verbatim}
-$ ls -l /proc/$$/ns
-total 0
-lrwxrwxrwx 1 user group 0 elo    1 13:47 cgroup -> cgroup:[4026531835]
-lrwxrwxrwx 1 user group 0 elo    1 13:47 ipc -> ipc:[4026531839]
-lrwxrwxrwx 1 user group 0 elo    1 13:47 mnt -> mnt:[4026531840]
-lrwxrwxrwx 1 user group 0 elo    1 13:47 net -> net:[4026532009]
-lrwxrwxrwx 1 user group 0 elo    1 13:47 pid -> pid:[4026531836]
-lrwxrwxrwx 1 user group 0 elo    1 13:47 pid_for_children -> pid:[4026531836]
-lrwxrwxrwx 1 user group 0 elo    1 13:47 user -> user:[4026531837]
-lrwxrwxrwx 1 user group 0 elo    1 13:47 uts -> uts:[4026531838]
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ ls -l /proc/$$/ns | awk '{print $1"\t"$(NF-2)$(NF-1)$NF}'
+lrwxrwxrwx      cgroup->cgroup:[4026531835]
+lrwxrwxrwx      ipc->ipc:[4026531839]
+lrwxrwxrwx      mnt->mnt:[4026531840]
+lrwxrwxrwx      net->net:[4026532009]
+lrwxrwxrwx      pid->pid:[4026531836]
+lrwxrwxrwx      pid_for_children->pid:[4026531836]
+lrwxrwxrwx      user->user:[4026531837]
+lrwxrwxrwx      uts->uts:[4026531838]
 
-\end{verbatim}
+\end{lstlisting}
 
 Below is an example of using namespaces to create an isolated environment. The current process id in a bash shell can be found out using "\$\$". Then use unshare command to create a new namespace. Here the arguments "pid" and "net" signifies new namespaces for process ids and network. The argument "mount-proc" tells the command to mount the proc file system. The "fork" option makes a fork of the current process before creating the namespace and attaching the child process to it. 
 
-\begin{verbatim}
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
 $ echo $$ 
 8009
 $ unshare --fork --pid --net --mount-proc bash
 root:~# ip l
-1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN mode DEFAULT group default qlen 1000
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN mode DEFAULT group
+    default qlen 1000 link/loopback 00:00:00:00:00:00
+    brd 00:00:00:00:00:00
 root:~# ps -aef
 UID        PID  PPID  C STIME TTY          TIME CMD
 root         1     0  0 13:37 pts/26   00:00:00 bash
 root        12     0  0 13:44 pts/30   00:00:00 -bash
 root        32     1  0 13:52 pts/26   00:00:00 ps -aef
 root:~#                                  
-\end{verbatim}
 
-\begin{verbatim}
 $ ps -aef | grep bash | grep root | awk '{print $1"\t"$2"\t"$3"\t"$8}'
 root     31215  8009    sudo
 root     31294 31215    sudo
@@ -539,51 +545,257 @@ root        12     0  0 13:44 pts/30   00:00:00 -bash
 root        30    12  0 13:45 pts/30   00:00:00 ps -aef
 root:/# 
 
-\end{verbatim}
+\end{lstlisting}
 
-Add a network bridge within the new namespace and check outside.
+\texttt{Add a network bridge within the new namespace and check outside.}
 
-\begin{verbatim}
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
 root:~# brctl addbr asd
 root:~# ip l
-1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN mode DEFAULT group default qlen 1000
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-2: asd: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
-    link/ether 4a:18:f1:3c:9c:b2 brd ff:ff:ff:ff:ff:ff
-\end{verbatim}
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN mode DEFAULT group
+    default qlen 1000 link/loopback 00:00:00:00:00:00
+    brd 00:00:00:00:00:00
+2: asd: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode
+    DEFAULT group default qlen 1000 link/ether 4a:18:f1:3c:9c:b2
+    brd ff:ff:ff:ff:ff:ff
+\end{lstlisting}
 
-Control groups on the other hand are useful in limiting the resource consumption. All processes that are a part of a particular control group can be limited to utilization of a system resource.
+Control groups on the other hand are useful in limiting the resource consumption. Control groups or cgroups are organized hierarchically. 
 
-Any description of containers is incomplete without a comparison to virtual machines. A virtual machine emulates an entire machine. There is a hypervisor that runs on the host machine that emulates the underlying hardware. Then a complete operating system running on top of it. The advantage of virtual machine is that it is completely isolated from the host machine. The run environment can be guaranteed in spite of the underlying hardware and operating system. While at the same time, virtual machines can be heavy weight and resource consuming. In contrast, the container essentially runs completely on the host. It uses namespaces and control groups for isolation of the container from the host. As a result, they are much more easy to boot up, lightweight and picking up in popularity when compared to virtual machines [].
+Any description of containers is incomplete without a comparison to virtual machines. A virtual machine emulates an entire machine. There is a hypervisor that runs on the host machine that emulates the underlying hardware. Then a complete operating system running on top of it. The advantage of virtual machine is that it is completely isolated from the host machine. The run environment can be guaranteed in spite of the host hardware and operating system. While at the same time, virtual machines can be heavy weight and resource consuming. In contrast, the container essentially runs completely on the host. It uses namespaces and control groups for isolation of the container from the host. As a result, they are much more easy to boot up, lightweight and picking up in popularity when compared to virtual machines [].
 
 %% []
 
 is the easy replication of the development environment in scenarios such as in deployment. Containers have become de-facto standard for application packaging/deployment and there is a need to explore fast data processing solutions in a containerized environment.
-\subsubsection{Container Networking Interface}
-\subsection{Kubernetes}
-Kubernetes is container orchestration. It could be 
-\subsection{Open vSwitch}
-\section{Background}
-	History, theory, current practices
-	Definitions
-		CNI
-		SR-IOV
-		OvS
 
-	Considerations
-		Packet generators
+\subsubsection{Container Networking Interface}
+Container Networking Interface is a proposal for 
+%% https://github.com/containernetworking/cni/blob/master/SPEC.md
+
+\subsection{Kubernetes}
+Kubernetes is an open source orchestration system that manages containerized applications. It can be used for 
+
+k8s architecture (Chapter 4)
+One master and many workers. "Cluster is driven using API calls to controllers" Architecture diagram (https://kubernetes.io/docs/concepts/architecture/cloud-controller/)
+
+Components : Master, worker nodes and Controllers, Services, Pods, Namespaces, Network and Storage
+
+k8s master has Kube API server, kube-scheduler and etcd database.
+Also a cloud controller manager, other 3rd party softwares, DNS, etc. All needed for a production cluster. Kube API server updates etcd. Only this interacts with etcd.
+Kube api server acts like an access point to both "internal and external traffic" and "master process to the entire cluster".
+Scheduler decides which node to deploy the pod. Decision is  based on an algorithm. User defined algo could be used or the original one modified. Intel node discovery feature could be used with scheduler to figure out where to deploy.
+
+---- No more detailed writing
+k8s worker has kublet and kube-proxy
+Kubelet for local configurations
+
 \clearpage
 \section{Research material and methods}
-
+Considerations
+		Packet generators
 \clearpage
 \section{Core - Implementation, experiments}
-\subsection{First step - Multiple interfaces}
-Experiment with SR-IOV VF exposed to container and DPDK testpmd running on it.
+This section describes the core part of thesis, the experiments and measurements. The experiments were carried out in a progressive way, i.e, one experiment building on a previous one. 
+
+
+\subsection{1}
+A default docker container built on a bare Ubuntu image creates by default one interface that is connected to "docker0" bridge on the host. This is the default networking option in Docker []. 
+%% https://docs.docker.com/network/#scope-of-this-topic
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ docker run -it ubuntu:latest /bin/bash
+root@f8344e977497:/# ip l
+bash: ip: command not found
+root@f8344e977497:/# ifconfig 
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 172.17.0.2  netmask 255.255.0.0  broadcast 172.17.255.255
+        ether 02:42:ac:11:00:02  txqueuelen 0  (Ethernet)
+        RX packets 25  bytes 4140 (4.1 KB)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        loop  txqueuelen 1000  (Local Loopback)
+        RX packets 0  bytes 0 (0.0 B)
+        RX errors 0  dropped 0  overruns 0  frame 0
+        TX packets 0  bytes 0 (0.0 B)
+        TX errors 0  dropped 0 overruns 0  carrier 0  collisions 0
+\end{lstlisting}
+The host docker0 bridge in the same sub-net
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ ip a | grep -A 3 docker0
+7: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:29:09:76:49 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:29ff:fe09:7649/64 scope link 
+       valid_lft forever preferred_lft forever
+\end{lstlisting}
+
+Docker supports other networking options such as host, overlay, macvlan. Host networking option in Docker removes the network isolation between the host and the container. Overlay is an overlay network and can be used to connect to other containers in different host managed by Docker swarm. Macvlan assigns a MAC address to the virtual interface in the container and exposes it to a parent host physical interface making it look like a real physical interface. All of the above options are suited for specific use cases. The final option in Docker networking, using network plugins, is the most interesting one. It is an interface to use third part networking plugins, or CNI plugins. The open source CNI plugins for SR-IOV and DPDK could be used to explore fast data path networking in containers.
+
+The test setup consists of two physical machines. Both the machines have a management interface and two SR-IOV interfaces each. The SR-IOV interfaces are connected in back to back forming a closed loop as show in the figure below.
+
+One of the machines is used as a packet generator while the other one utilizes virtualization of SR-IOV to push the packet directly to the container. The container also runs a DPDK application that just forwards the packets received on one port to the other. To run DPDK based application, enable SR-IOV Virtual Functions and use CNI plugins with Docker, the host environment has to be configured as described below.
+
+For running DPDK based applications, hugepages should be enabled in the host machine. The hugepage sizes that supported in the most common Linux distributions are 2MB and 1GB. If 1GB hugepages are to be used, it is recommended to have them configured at boot time by setting some Kernel boot parameters. This it to ensure the availability of such a large contiguous memory, 1GB, in main memory. This is mostly not possible at run time due to fragmentation. The kernel boot parameters could be set by editing \lstinline{/etc/default/grub} and updating GRUB with \lstinline{update-grub} command. For instance, edit \lstinline{GRUB_CMDLINE_LINUX} to include, \lstinline{GRUB_CMDLINE_LINUX="default_hugepagesz=1G hugepagesz=1G hugepages=4"}. Now update GRUB, reboot machine and check boot parameters and consequently hugepage availability as follows,
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ cat /proc/cmdline 
+BOOT_IMAGE=/boot/vmlinuz-4.4.0-131-generic default_hugepagesz=1G hugepagesz=1G hugepages=4
+$ cat /proc/meminfo | grep -i hugepages_
+HugePages_Total:       4
+HugePages_Free:        4
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:    1048576 kB
+\end{lstlisting}
+
+The hugepages have to be mounted on the host. In some versions of Linux distributions, for instance, in Ubuntu 16.04 and higher, they are mounted automatically in \lstinline{/dev/hugepages}. It is also possible to isolate the CPU cores that will be used for the DPDK application using boot paramters so that the Kernel scheduler does not use them. For instance, \lstinline{GRUB_CMDLINE_LINUX="default_hugepagesz=1G hugepagesz=1G hugepages=4 isolcpus=2,3,4,5,6,7"}
+
+DPDK supports different Linux Kernel drivers such as UIO, VFIO, etc. []. VFIO is used in most of the cases in the thesis since, as stated in DPDK documentation, it is "more robust and secure" []. VFIO kernel module if supported, is shipped with the OS. It also needs IO virtualization such as Intel VT-d and that needs to be enabled in BIOS. IOMMU has to be set as a Kerenel boot parameter,
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ cat /proc/cmdline 
+BOOT_IMAGE=/boot/vmlinuz-4.4.0-131-generic default_hugepagesz=1G hugepagesz=1G hugepages=4 intel_iommu=on
+\end{lstlisting}
+
+Setting up a SR-IOV interface for virtualization requires IOMMU and Intel VT-d support which are also needed when using VFIO driver as noted above. The number of VFs to be enabled can be set using \lstinline{sys} virtual file system in 
+\lstinline{/sys/class/net/$IFNAME/device/sriov_numvfs} where \lstinline{$IFNAME} is the name of the SR-IOV interface as displayed in \lstinline{ip link} command. MAC address needs to be specifically set for each VF using \lstinline{ip link set dev $IFNAME vf $i mac aa:bb:cc:dd:ee:01} where \lstinline{$i} is the VF count. The Physical Function uses this to forward a received packet to the correct VF and hence directly to the container or VM it is exposed to.
+
+For using third party CNI plugins, when a Docker container is spawned, it looks for network configuration file in the default location, lstinline{/etc/cni/net.d/} and binary of the plugin in lstinline{/opt/cni/bin/}. The plugin used for this test case is SR-IOV CNI plugin with support for DPDK []
+%% https://github.com/intel/sriov-cni
+
+The topology needs a DPDK based container on one side and a packet generator on the other. For building a container that can run a DPDK application, the idea is to start with a base image of some standard Linux distribution such as Ubuntu 16.04, install the required libraries, tools including some debugging tools such as GNU debugger (GDB). DPDK compilation would require Linux header files and other standard build tools, make, etc. Then fetch the DPDK code, compile the libraries and the required application, testpmd. Some extra compile time flags are used to enable debugging with GDB.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ git clone http://dpdk.org/git/dpdk dpdk
+
+$ cat > build-dpdk.sh<<EOF
+echo "Build DPDK"
+make install T="\$RTE_TARGET" EXTRA_CFLAGS="-g -O0" -j8
+if [ \$? != 0 ]; then
+    echo -e "\tBuilding DPDK failed"
+    exit 1
+fi
+cd app/test-pmd/
+make -j8
+EOF
+
+$ chmod +x build-dpdk.sh
+$ cat > Dockerfile <<EOF
+FROM ubuntu:16.04
+RUN apt-get update; apt-get install -y apt-utils build-essential less make kmod vim pciutils libnuma-dev python gdb linux-headers-$(uname -r);
+COPY ./dpdk /root/dpdk
+COPY ./build-dpdk.sh /root/dpdk/build-dpdk.sh
+WORKDIR /root/dpdk/
+ENV RTE_SDK "/root/dpdk"
+ENV RTE_TARGET "x86_64-native-linuxapp-gcc"
+RUN ./build-dpdk.sh
+EOF
+
+$ docker build -t dpdk-docker:latest .
+\end{lstlisting}
+
+Now, as is visible from Fig.[], one VF per SR-IOV interface is sufficient for this experiment. However, one VF from each SR-IOV interface is exposed to the container. The CNI plugin configuration used is as follows,
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ cat /etc/cni/net.d/10-sriov-dpdk.conf
+{
+    "name": "net1",
+    "type": "sriov",
+    "if0": "enp1s0f1",
+    "if0name": "if0",
+    "dpdk": {
+        "kernel_driver":"ixgbevf",
+        "dpdk_driver":"igb_uio",
+        "dpdk_tool":"\$RTE_SDK/usertools/dpdk-devbind.py"
+    }
+}
+\end{lstlisting}
+
+In the configuration above, \lstinline{type} is always \lstinline{sriov} for this plugin, \lstinline{if0} is the name of the SR-IOV interface or PF, \lstinline{if0name} is the name inside the container and within dpdk parameters, \lstinline{kernel_driver} is the current Kernel driver the interface is using, \lstinline{dpdk_driver} is the DPDK driver that needs to be used, such as VFIO and \lstinline{dpdk_tool} is a tool that is shipped with DPDK source code that can be used to binding interfaces to DPDK. The above configuration could be replicated with different \lstinline{if0} and \lstinline{if0name} for the VF from second SR-IOV interface.
+%% [] https://github.com/intel/sriov-cni
+
+To run DPDK application in the container, the container has to be run in privileged mode so that it bind the interfaces, get hugepage information, etc. This can be done with the \lstinline{--privileged} flag in Docker. Also, the hugepage mount location has to be mounted in the container as a volumn. Docker run command is as follows,
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+docker run -it -v /dev/hugepages:/dev/hugepages --privileged dpdk-docker:gdb /bin/bash
+\end{lstlisting}
+
+Inside the container, start testpmd application and configure it for forwarding packets received on one port to the other. If there are an even number of ports attached to DPDK, this is also the default behavior. This can be checked with \lstinline{show config fwd} command inside testpmd. Start Rx/Tx with \lstinline{start} command.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+testpmd> show config fwd
+io packet forwarding - ports=2 - cores=1 - streams=2 - NUMA support enabled, MP over anonymous pages disabled
+Logical Core 1 (socket 0) forwards packets on 2 streams:
+  RX P=0/Q=0 (socket 0) -> TX P=1/Q=0 (socket 0) peer=02:00:00:00:00:01
+  RX P=1/Q=0 (socket 0) -> TX P=0/Q=0 (socket 0) peer=02:00:00:00:00:00
+
+testpmd> start
+\end{lstlisting}
+
+On the packet generator side, DPDK based packet generator "pktgen" is used. Since this is a DPDK application, similar steps as above are repeated. Bind both interfaces to DPDK and start pktgen.
+Latency has to be specifically enabled in DPDK interfaces in pktgen and the packet size set to 96 so that there is room in the buffer for time stamping. Here, we set the destination MAC address as the MAC address of the receiving VF, otherwise the packets get dropped at PF.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+./app/x86_64-native-linuxapp-gcc/pktgen -l 0-3 -n 4 --proc-type auto --log-level 7 --socket-mem 2048 --file-prefix pg -- -T -P --crc-strip -m [1:2].0 -m [2:3].1 -f themes/black-yellow.theme
+pktgen> enable 1 latency
+pktgen> set 1 dst mac aa:bb:cc:dd:ee:00
+pktgen> set 1 size 96
+pktgen> start 1
+\end{lstlisting}
+Above, 1 refers to the port number we are generating packets. And with \lstinline{start 1}, packets are generated at approximately 11 million packets per second (Mpps), as reported by pktgen.
+
+The latency was about 800 micro seconds.
+
+For a comparative study, instead of the host with DPDK based container and packet forwarded through a DPDK based application (testpmd), let the packet packet processing happen via. the standard Linux kernel stack. For this, create a Linux bridge and add the two interfaces to it.
+
+The latency was about 8700 micro seconds for a packet rate of 10Mpps.
+
+\subsection{2}
+The test setup in the previous section used probably the simplest network possible. The machines were directly connected and the traffic blindly forwarded from one port to another. In a more realistic scenario, there could be multiple containers running on the host and packets forwarded between them. In a container orchestrated environment with Kubernetes, these containers or pods could very well reside in different hosts. Exploring a more generic solution is needed.
+
+The default networking provided with Docker, using \lstinline{docker0} bridge is a good solution that would work. Similarly, the overlay network driver in Docker and other third part network plugins such as using Flannel[], Weave Net[2], Calico[3], etc. which also work with Kubernetes are also solutions that could work with little hassle. But none of these methods provide support for a fast data path using DPDK or SR-IOV. However, Open vSwitch is one that supports DPDK and provides a way to easily configure the network using Open Flow. Though it might be an overhead in a simple topology, it should scale well when the network is more complicated with multiple hosts and management interfaces. It also has features to set up tunneling interfaces to configure an overlay network which could be helpful with Kubernetes. However, whether the overlay network can support a DPDK based fast data path has to be still explored.
+%% [1] https://github.com/coreos/flannel
+%% [2] https://github.com/weaveworks/weave
+%% [3] https://docs.projectcalico.org/v2.0/getting-started/kubernetes/
+
+This section uses OvS with DPDK and a container with DPDK application, testpmd on one side. Both the SR-IOV interfaces are this time connected to the OvS bridge. The other packet generator side is unchanged as the previous test scenario.
+
+OvS releases page[1] notes the compatible versions of DPDK with OvS and also the compatible version of OvS for different Linux Kernel versions. In this experiment, the Linux Kernel version used is \lstinline{4.4.0-131-generic}. Correspondingly, the latest compatible version of OvS is 2.9.x and DPDK version compatible this version of OvS is 17.11.3
+%% [1] http://docs.openvswitch.org/en/latest/faq/releases/
+
+To use Open vSwitch (OvS) with DPDK data path, DPDK needs to be built as in normal scenario but with the correct version as described above. The environment variables \lstinline{RTE_SDK} and \lstinline{RTE_TARGET} should be set. The former is the path to DPDK source code and the later is the build target environment, or \lstinline{x86_64-native-linuxapp-gcc} in this case. The OvS needs to be configured with \lstinline{--with-dpdk="$RTE_SDK/$RTE_TARGET"} and compiled.
+
+DPDK parameters such as lcore, memory and other typical settings used with most other DPDK applications can be set in the OvS data base as shown below,
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+sudo ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
+sudo ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask=0x0F
+sudo ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem=256
+sudo ovs-vsctl --no-wait set Open_vSwitch . external-ids:system-id="${HOSTNAME}id"
+\end{lstlisting}
+
+The system ID could come in handy when setting up an overlay network with OvS. Most other steps in setting up OvS with DPDK are quite straighforward or well documented and not listed here.
+
+The final part of the previous section had a Linux bridge with interfaces attached to it and packets forwarded as a normal bridge would do, flood. In this test, something similar in theory is done with an OvS bridge. But, the interfaces are bound to DPDK and then attached to an OvS bridge. Also couple of flows are added to the bridge to forward the packets received on one interface to the other and vice versa instead of flooding. The commands are shown in detail below.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ ovs-vsctl add-br dpdk-br -- set bridge dpdk-br datapath_type=netdev
+$ ovs-vsctl add-port dpdk-br p1 -- set Interface p1 type=dpdk options:dpdk-devargs=0000:01:00.0 ofport_request=1
+$ ovs-vsctl add-port dpdk-br p2 -- set Interface p2 type=dpdk options:dpdk-devargs=0000:01:00.1 ofport_request=2
+$ ovs-ofctl add-flow ext1 in_port=2,action=output:1
+$ ovs-ofctl add-flow ext1 in_port=1,action=output:2
+\end{lstlisting}
+
+Now from the other end, packets were generated at an average of 10Mpps and the latency was observed to be around 800 micro seconds. This is the same value of latency observed in the previous section with SR-IOV VF exposed to a container and a DPDK based application running on a container. This shows that OvS running as a DPDK application does not add any additional latency. Also, counter intuitively, a container running DPDK application gives same latency as OvS on DPDK. This implies, a container as such does not add any latency to slow down the processing of packets. Which it should not theoretically as well.
+
+Now, the next logical step is to add a container in between the two interfaces and forward the packets to a DPDK application, testpmd, running inside the container and push them out and back to the packet generator. To expose DPDK interfaces to a container via. OvS, a OvS
+
 \subsection{Building a Kubernetes cluster}
-Using MAAS for building a cluster from bare metal.
-Two approaches to deploying k8s - juju and kubeadm
+Using MAAS for building a cluster from bare metal. Two approaches to deploying k8s - juju and kubeadm
 \subsection{Kubernetes with multus}
-Intel Node Feature Discovery
+Kubernetes incubator project - Node Feature Discovery
 \subsection{OvS-DPDK and container}
 \subsection{Kubernetes with OvN}
 Exposing external interface and routing within
