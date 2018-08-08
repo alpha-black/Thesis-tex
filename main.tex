@@ -171,7 +171,7 @@
 \usepackage{listings}
 \lstset{frame=tb,
   basicstyle={\ttfamily}, 
-  language=shell,
+  language=sh,
   breaklines=true,
   tabsize=4
 }
@@ -753,9 +753,9 @@ For a comparative study, instead of the host with DPDK based container and packe
 The latency was about 8700 micro seconds for a packet rate of 10Mpps.
 
 \subsection{2}
-The test setup in the previous section used probably the simplest network possible. The machines were directly connected and the traffic blindly forwarded from one port to another. In a more realistic scenario, there could be multiple containers running on the host and packets forwarded between them. In a container orchestrated environment with Kubernetes, these containers or pods could very well reside in different hosts. Exploring a more generic solution is needed.
+The test setup in the previous section used was probably the simplest network possible. The machines were directly connected and the traffic blindly forwarded from one port to another. In a more realistic scenario, there could be multiple containers running on the host and packets forwarded between them. In a container orchestrated environment with Kubernetes, these containers or pods could very well reside in different hosts. This calls for exploring a more generic networking solution.
 
-The default networking provided with Docker, using \lstinline{docker0} bridge is a good solution that would work. Similarly, the overlay network driver in Docker and other third part network plugins such as using Flannel[], Weave Net[2], Calico[3], etc. which also work with Kubernetes are also solutions that could work with little hassle. But none of these methods provide support for a fast data path using DPDK or SR-IOV. However, Open vSwitch is one that supports DPDK and provides a way to easily configure the network using Open Flow. Though it might be an overhead in a simple topology, it should scale well when the network is more complicated with multiple hosts and management interfaces. It also has features to set up tunneling interfaces to configure an overlay network which could be helpful with Kubernetes. However, whether the overlay network can support a DPDK based fast data path has to be still explored.
+The default networking provided with Docker, using \lstinline{docker0} bridge is a good solution that would work for containers in one host. Similarly, the overlay network driver in Docker and other third part network plugins such as using Flannel[], Weave Net[2], Calico[3], etc. which also work with Kubernetes are also solutions that could work with little hassle. But none of these methods provide support for a fast data path using DPDK or support virtualization with SR-IOV VFs. However, Open vSwitch is one plausible solution. It supports DPDK and provides a way to easily configure the network using Open Flow. Though it might be an overhead in a simple topology, it could scale well when the network is more complicated with multiple hosts and different types of interfaces such as for management and data since it also supports setting up tunneling interfaces to configure an overlay network which could be helpful with Kubernetes. However, whether the overlay network can support a DPDK based fast data path is still to be explored.
 %% [1] https://github.com/coreos/flannel
 %% [2] https://github.com/weaveworks/weave
 %% [3] https://docs.projectcalico.org/v2.0/getting-started/kubernetes/
@@ -790,9 +790,48 @@ $ ovs-ofctl add-flow ext1 in_port=1,action=output:2
 
 Now from the other end, packets were generated at an average of 10Mpps and the latency was observed to be around 800 micro seconds. This is the same value of latency observed in the previous section with SR-IOV VF exposed to a container and a DPDK based application running on a container. This shows that OvS running as a DPDK application does not add any additional latency. Also, counter intuitively, a container running DPDK application gives same latency as OvS on DPDK. This implies, a container as such does not add any latency to slow down the processing of packets. Which it should not theoretically as well.
 
-Now, the next logical step is to add a container in between the two interfaces and forward the packets to a DPDK application, testpmd, running inside the container and push them out and back to the packet generator. To expose DPDK interfaces to a container via. OvS, a OvS
+Now, the next logical step is to add a container in between the two interfaces and forward the packets to a DPDK application, testpmd, running inside the container and forward the packets back to the packet generator. To expose DPDK interfaces to a container via. OvS, OvS uses \lstinline{vhostuser} port on the host side. This creates a UNIX domain socket which needs to be exposed to the container. In DPDK application, a \lstinline{virtiouser} port is created using this socket file. Now, flows are added to forward packets between the DPDK interface and \lstinline{vhostuser} ports. The packets received at \lstinline{vhostuser} will be picked by \lstinline{virtiouser} and thus the DPDK application.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ ovs-vsctl add-port dpdk-br vhu-p1 -- set Interface vhu-p0 type=dpdkvhostuser
+$ ovs-vsctl add-port dpdk-br vhu-p2 -- set Interface vhu-p1 type=dpdkvhostuser
+$ ovs-ofctl add-flow dpdk-br in_port=1,actions=output:3
+$ ovs-ofctl add-flow dpdk-br in_port=4,actions=output:2
+\end{lstlisting}
+
+The port numbers in OvS could be verified with command \lstinline{ovs-ofctl dump-ports-desc dpdk-br}. The UNIX domain sockets are created by default in location \lstinline{/usr/local/var/run/openvswitch/}. So, this also has to be mounted while running DPDK Docker apart from the hugepages mount.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+docker run --privileged -it -v /dev/hugepages:/dev/hugepages -v /usr/local/var/run/openvswitch:/var/run dpdk-docker:gdb /bin/bash
+\end{lstlisting}
+
+While running the DPDK application inside container, the PCI devices are disabled so that the application does not look for physical ports and virtual devices are created using the two \lstinline{virtiouser} ports.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+./testpmd -c 0xf -n 4 -m 1024 --no-pci --vdev=virtio_user0,path=/var/run/vhu-p1 --vdev=virtio_user1,path=/var/run/vhu-p2 --file-prefix=container -- -i
+\end{lstlisting}
+
+Now, as before, the other host starts sending packets at 11Mpps and the latency was observed to be approximately 5000 micro seconds.
+
+\subsection{Fast packet processing in Kubernetes}
+The previous two sections dealt with the networking aspects when containers were hosted on just one  host and packets were generated from another. But in a real scenario, there would be a cluster of many hosts with some container orchestration such as Kubernetes managing them. When a request to deploy a new container or rather a pod, in Kubernetes nomenclature, is received, Kubernetes decides on which host to deploy depending on the requirements to run the pod such as memory, CPU cores and any other constraints that may be provided. Kubernetes has to find a host that fits all the bills. The networking aspects in such a scenario could get tricky. In a Kubernetes deployed pod, there has to be one management interface to communicate with kubelet, which runs on all the worker nodes. Then, for fast packet processing, some other pod interfaces that are connected to the DPDK bound physical interfaces. These DPDK interfaces could be exposed to the external network.
+
+Now, when a pod is being deployed in Kubernetes and if it needs external DPDK interfaces, Kubernetes has to decide on which host to deploy the pod. There are three scenarios to be considered here.
+
+The first scenario is when the required number of external DPDK interfaces for the pod is present in all of the Kubernetes worker nodes. In this case the pod could be deployed in any of the hosts and this does not become a constraint. The only question to be answered here is how to expose multiple interfaces to a pod. Kubernetes in its default state supports only one interface.
+
+The second scenario is when the required external DPDK interaces for the pod are present in just some of the worker nodes. In this case, the Kubernetes scheduler, which runs on the master, needs some mechanism to find out which hosts satisfy this criteria.
+
+The third scenario is the trickiest. If the required number of DPDK interfaces are say, three, and there are three worker nodes with one DPDK interface each. Here, the decision on which host to deploy the pod cannot be made based on meeting this criteria but rather, there has to be some fast data path between the worker nodes. Earlier it was noted that every Kubernetes pod has a default management interface which is used to communicate with the kubelet running on the worker node. This also implies, there is a management interface on each worker node that is reachable to each other and also the master. This is also one of Kubernetes networking requirements[].
+%% [] https://kubernetes.io/docs/concepts/architecture/master-node-communication/
+
+The above three scenarios and their potential solutions are discussed in the next three sections. But first, lets build a Kubernetes cluster. 
 
 \subsection{Building a Kubernetes cluster}
+In this section, a Kubernetes cluster is built on a bunch of bare metal hosts.
+
+
+
 Using MAAS for building a cluster from bare metal. Two approaches to deploying k8s - juju and kubeadm
 \subsection{Kubernetes with multus}
 Kubernetes incubator project - Node Feature Discovery
@@ -803,7 +842,6 @@ Exposing external interface and routing within
 \section{Results}
 
 \clearpage
-\section{Summary} 
 
 \clearpage
 \thesisbibliography
