@@ -825,25 +825,52 @@ The second scenario is when the required external DPDK interaces for the pod are
 The third scenario is the trickiest. If the required number of DPDK interfaces are say, three, and there are three worker nodes with one DPDK interface each. Here, the decision on which host to deploy the pod cannot be made based on meeting this criteria but rather, there has to be some fast data path between the worker nodes. Earlier it was noted that every Kubernetes pod has a default management interface which is used to communicate with the kubelet running on the worker node. This also implies, there is a management interface on each worker node that is reachable to each other and also the master. This is also one of Kubernetes networking requirements[].
 %% [] https://kubernetes.io/docs/concepts/architecture/master-node-communication/
 
-The above three scenarios and their potential solutions are discussed in the next three sections. But first, lets build a Kubernetes cluster. 
+The above three scenarios and their potential solutions are discussed in the next few sections. But first let's build a Kubernetes cluster.
 
 \subsection{Building a Kubernetes cluster}
-In this section, a Kubernetes cluster is built on a bunch of bare metal hosts.
+The Kubernets cluster is built from bare metal machines. To build a cluster from these hosts, MAAS or Metal as a Service, is used. MAAS is open source software developed by Canonical[]. MAAS needs a central machine which is the controller. The controller runs a DHCP server. Other nodes to be added to the cluster should be placed in the sub-net and configured to boot from network or PXE boot. The controller was configured to use Ubuntu 16.04 images for commissioning the nodes. The topology of the machines is show in Figure 1. 
+%% [] https://www.canonical.com/
 
+\begin{figure}[htb]
+\begin{center}
+\includegraphics[height=8cm]{pics/MAAS-topology.png}
+\end{center}
+\caption{Topology of cluster built with MAAS}
+\label{liitekuva}
+\end{figure}
 
+A MAAS cluster can have two types of controllers, region and rack controller. Since, the setup being built is quite small and the machines can be physically attached to a subnet using only a bridge, just one controller is used. It acts both as region and rack controller. Adding nodes to the cluster can be done by attaching the new machine to the subnet and setting the interface to PXE boot. The controller sends the boot image through the local area network and runs some cloud init scripts to set up the new machine. The new machine goes into "Ready" state and can be acquired while deploying some application such as Kubernetes. Functioning quite like a cloud. For the nodes to have external connectivity, the controller's IP tables have to be modified to enable NAT.
 
-Using MAAS for building a cluster from bare metal. Two approaches to deploying k8s - juju and kubeadm
-\subsection{Kubernetes with multus}
+To deploy Kubernetes, the easiest approach, as documented in[], is to deploy it with Juju. This essentially, deploys a out-of-box Kubernetes with one or more masters, worker nodes and other applications such as etcd, flannel, easyrsa, etc. "etcd" is used to distributed key value storage, "flannel" is the network plugin and "easyrsa" is for generating certificates for TLS. For this approach, Juju needs to be deployed first and it needs a dedicated controller. One way is to start a virtual machine in MAAS controller and add it to the cluster and use it as Juju controller. Another approach would be to use any other node in cluster for this. The choice depends on how machines are available and how many are needed for Kuberentes since Juju controller cannot be in Kubernetes. In this experiment, the virtual machine method was used. Juju can be used to deploy a two worker Kubernetes cluster using the command \lstinline{juju deploy cs:bundle/kubernetes-core-251}.
+
+To deploy a simple pod in Kubernetes, create pod manifest file and use kubectl commands to create the pod.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ cat > helloworld.yaml <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+spec:
+  containers:
+  - name: test-container
+    image: ubuntu:latest
+    command: ["/bin/bash"]
+    args: ["-c", "echo SUCCESS"]
+EOF
+$ kubectl create -f helloworld.yaml
+$ kubectl get pods
+$ kubectl logs test-pod
+\end{lstlisting}
+
+\subsection{Scenario 1, Multus}
+\subsection{Scenario 2, Node feature discovery}
 Kubernetes incubator project - Node Feature Discovery
-\subsection{OvS-DPDK and container}
-\subsection{Kubernetes with OvN}
+\subsection{Scenario 3, Kubernetes with OvN}
 Exposing external interface and routing within
 \clearpage
 \section{Results}
 
-\clearpage
-
-\clearpage
 \thesisbibliography
 \begin{thebibliography}{99}
 
