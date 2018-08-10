@@ -223,7 +223,8 @@
 %% argument in box brackets. This is done because the title is part of the 
 %% metadata in the pdf/a file, and the metadata cannot contain linebreaks.
 %%
-\thesistitle{Accelerated DPDK in containers for networking nodes}
+\thesistitle[Accelerated DPDK in containers for networking nodes]{Accelerated DPDK in containers \\ for networking nodes}
+
 %\thesistitle[Title of the thesis]{Title of\\ the thesis}
 %%
 
@@ -265,7 +266,7 @@
 %% Thesis keywords:
 %% Note! The keywords are separated using the \spc macro
 %%
-\keywords{NFV\spc DPDK \spc Containers\spc OvS\spc SR-IOV\spc Kubernetes \spc CNI}
+\keywords{DPDK\spc Containers\spc Docker\spc Kubernetes\spc CNI\spc OvS\spc SR-IOV\spc NFV}
 %%
 
 %% The abstract text. This text is included in the metadata of the pdf file as well
@@ -380,39 +381,14 @@ Otaniemi, 24.4.2018
 
 %% Symbols and abbreviations
 \mysection{Abbreviations}
-
-\subsection*{Symbols}
-
 \begin{tabular}{ll}
-
-$\mathbf{B}$  & magnetic flux density  \\
-$c$              & speed of light in vacuum $\approx 3\times10^8$ [m/s]\\
-$\omega_{\mathrm{D}}$    & Debye frequency \\
-$\omega_{\mathrm{latt}}$ & average phonon frequency of lattice \\
-$\uparrow$       & electron spin direction up\\
-$\downarrow$     & electron spin direction down
-\end{tabular}
-
-\subsection*{Operators}
-
-\begin{tabular}{ll}
-$\nabla \times \mathbf{A}$              & curl of vectorin $\mathbf{A}$\\
-$\displaystyle\frac{\mbox{d}}{\mbox{d} t}$ & derivative with respect to 
-variable $t$\\[3mm]
-$\displaystyle\frac{\partial}{\partial t}$  & partial derivative with respect 
-to variable $t$ \\[3mm]
-$\sum_i $                       & sum over index $i$\\
-$\mathbf{A} \cdot \mathbf{B}$    & dot product of vectors $\mathbf{A}$ and 
-$\mathbf{B}$
-\end{tabular}
-
-\subsection*{Abbreviations}
-
-\begin{tabular}{ll}
+CNI         & Container Networking Interface \\
 DPDK        & Data Plane Development Kit \\
-NFV         & Network Function Virtualization \\
-SR-IOV      & Single Root IO Vitrualization \\
 k8s         & Kubernetes \\
+NFV         & Network Function Virtualization \\
+OVN         & Open Virtual Netowrk \\
+OvS         & Open vSwitch \\
+SR-IOV      & Single Root IO Vitrualization \\
 \end{tabular}
 
 
@@ -431,29 +407,20 @@ k8s         & Kubernetes \\
 %% Leave page number of the first page empty
 %% 
 \thispagestyle{empty}
-In telecommunication industry, the network node functions have traditionally run on operator proprietary hardware which are dedicated for a specific purpose, known as ASICs (Application Specific Integrated Circuits). This has led to long development and deployment cycles, higher cost of operation, etc., thereby hindering rapid technological advancement in the field. Slowly the network node functions are being replaced by virtualized software solutions that can run on generic computing hardware; thereby addressing the above problems and making the network more flexible. This network architecture where virtualized software solutions are chained together or combined to form network node functions is called Network Function Virtualization (NFV).
+In telecommunication industry, the network node functions have traditionally run on operator proprietary hardware which are dedicated for a specific purpose, known as ASICs (Application Specific Integrated Circuits). This has led to long development and deployment cycles, higher cost of operation, etc., thereby hindering rapid technological advancement in the field. Slowly the network node functions are being replaced by virtualized software solutions that can run on generic computing hardware; addressing the above problems and making the network more flexible. This network architecture where virtualized software solutions are chained together to form network node functions is called Network Function Virtualization (NFV).
 
-In the NFV nomenclature, the software implementation of the network node functions or sub-functions are referred to as Virtual Network Functions (VNF). For instance, a network firewall, a DHCP server or a NAT function. The current de-facto VNF implementations run on virtual machines such as a Kernel-based Virtual Machine (KVM). But with the recent advent of containers and their gaining popularity due to some of their obvious advantages over virtual machines, there is a need to explore their suitability in NFV. Containers are comparatively light weight and utilize the same host kernel when compared to virtual machines. They can be booted up with minimum latency [] which implies, container based deployments focus on on-demand spawning of the containerized application. For example, a NAT application running on a container could be spawned up based on the number of clients utilizing it, with one container handling one or a fixed number of clients. However, utilizing containers in NFV is still in its nascent stages and there are quite a few issues to be explored and addressed [][].
+In the NFV nomenclature, the software implementation of the network node functions or sub-functions are referred to as Virtual Network Functions (VNF). For instance, a network firewall, a DHCP server or a NAT function. The current de-facto VNF implementations run on virtual machines such as a Kernel-based Virtual Machine (KVM). But with the recent advent of containers and their gaining popularity due to some of their obvious advantages over virtual machines, there is a need to explore their suitability in NFV. Containers are comparatively light weight and utilize the same host kernel when compared to virtual machines. They can be booted up with minimum latency\cite{container-vm-comparison} which implies, container based deployments focus on on-demand spawning of the containerized application. For example, a NAT application running on a container could be spawned up based on the number of clients utilizing it, with one container handling one or a fixed number of clients. However, utilizing containers in NFV is still in its nascent stages and there are quite a few issues to be explored and addressed [][].
 %% [ https://www.redhat.com/blog/verticalindustries/is-nfv-ready-for-containers/ ], there are several on going studies and  containerization in NFV is still in a nascent stage and  As listed in [ https://www.ietf.org/proceedings/94/slides/slides-94-nfvrg-11.pdf ], some of the key features needed in NFV environment are performance, portability/scalability and isolation. 
 
-The scope of the thesis is to focus on the networking aspect of utilizing containers in NFV. An import requirement in NFV is fast packet processing when compared to normal container based deployments. The thesis explores container networking both in a standalone environment and also in a container orchestrated environment, utilizing Data Plane Development Kit (DPDK) for fast packet processing and Single Root IO Virtualization (SR-IOV) for hardware virtualization.
+The scope of the thesis is to focus on the networking aspect of utilizing containers in NFV. An import requirement in NFV is fast packet processing when compared to normal container based deployments. For a comprehensive understanding of container networking scenario and as a baseline for measurements, the thesis starts with exploring container networking in a standalone environment and then moves on to an orchestrated environment with multiple hosts. The main focus is on incorporating Data Plane Development Kit (DPDK) for fast packet processing and Single Root IO Virtualization (SR-IOV) for hardware virtualization, into the various networking solutions explored.
 
-A container orchestrated environment could be visualized as a cloud of multiple servers with multiple containers spawned on request and killed after serving the request. A fast data path in this scenario would include DPDK supported interfaces that are exposed to the external network and also a fast packet forwarding within the cloud to reach the container of interest. When the orchestrator deploys a container, there are constraints to make sure that the fast data path is exposed to it. Such a networking requirement could be critical in NFV and finding a suitable generic solution to it is one of the key questions driving this thesis.
+A container orchestrated environment could be visualized as a cluster of multiple hosts with  containers being spawned on request and killed after serving the request. These containers could be spawned on any of the hosts based on a variety of factors. A fast data path in this scenario would include DPDK supported interfaces that are exposed to the external network and also a fast packet forwarding within the cluster to reach the container of interest. Such a data path which does not affect the flexibility of the cluster is one of the key questions driving this thesis. 
 
-DPDK utilizes several techniques for better packet processing such as skipping the kernel network stack and running applications in userspace, using poll mode drivers instead interrupt driven ones, hugepages, Direct Memory Access (DMA) and others. Among them correct utilization of hugepages is an important aspect especially when multiple DPDK based applications are run simultaneously in the same host. Most of the current container run-time applications such as Docker,.. do not support hugepage isolation. It is possible that one application ends up consuming or pre-allocating all the hugepages. Addressing this drawback to support hugepage isolation in Docker is another key aspect of this thesis.
+DPDK utilizes several techniques for better packet processing such as skipping the kernel network stack and running applications on userspace, using poll mode drivers instead interrupt driven ones, hugepages, Direct Memory Access (DMA) and others. Among them, correct utilization of hugepages is an important aspect especially when multiple DPDK based applications are run simultaneously in the same host. Most of the current container run-time applications such as Docker, LXC do not support hugepage isolation and resource limitation. It is possible that one application could end up consuming or pre-allocating all of the available hugepages. Addressing this drawback to support hugepage isolation in containers is another key aspect of this thesis.
 
 Whenever possible, for a better grasp of the performance measurements with DPDK/SR-IOV, a comparative study with and without them is done. For some of the basic tools, only the industry de-facto solutions are considered, such as  Docker for container run-time and Kubernetes for container orchestration. Keeping these constant, the exploration is on the various networking solutions feasible for them and other aspects described above.
 
-%%While carrying out the experiments, scalability and generic nature of the solution have been given important consideration.
-
-
-%%Some questions that need answering are : 
-	%%- Hugepage isolation in containers, freeing of hugepage (on failure of DPDK application?) . It is important to consider multiple DPDK based apps running on the same host [2]
-	%%- The same plug-in uses DPDK on VF on the host and just exposes it to container
-	
-%%Whenever any decision on technologies to be used is taken, it is done so with NFV consideration. Also, for container orchestration, Kubernetes is de-facto solution and is the only considered one in the thesis.
-
-The next section in the thesis covers the related technologies utilized, their definitions and how they work. The motivation for them and in some cases their evolution. The third chapter is a prelude to the experimentation part which is chapter four.
+The next section in the thesis covers the related technologies utilized, their definitions and how they work. The motivation for them and in some cases their evolution. The third chapter is a prelude to the experimentation part which covers related work and other miscellaneous information. The forth chapter is the core part of the thesis with the experiments, their motivation and in detail, the questions that are trying to answered.
 
 \clearpage
 \section{How stuff works}
@@ -590,15 +557,19 @@ k8s worker has kublet and kube-proxy
 Kubelet for local configurations
 
 \clearpage
-\section{Research material and methods}
-Considerations
-		Packet generators
+\section{Related work and Misc}
+1. Related work in the field
+2. Experimental runs, how many and what is measured
+3. Considerations - Packet generators
+
+
 \clearpage
 \section{Core - Implementation, experiments}
-This section describes the core part of thesis, the experiments and measurements. The experiments were carried out in a progressive way, i.e, one experiment building on a previous one. 
+This section covers the actual experimentation part of the thesis with the motivation to do so. The first two subsections explore a fast data path in container running in a single host. The first of those is a DPDK based container running on a host with SR-IOV interfaces being used for forwarding packets from the NIC to the container and back. The second subsection is a study on Open vSwitch (OvS) and DPDK acceleration. In this case, there is a OvS bridge receiving packets from the NIC and forwarding to the container and back. There is a comparative study to understand how much acceleration is brought about by DPDK.
 
+The remaining subsections consider only a cluster environment with Kubernetes. For a fast data path in this case, multiple scenarios have been considered and some potential solutions discussed and experimented with. For this, initially a Kubernetes cluster is built on bare metal using MAAS (Metal-as-a-Service) and \lstinline{kubeadm} or Juju. Then the different scenarios are outlined and discussed one after the other in a detailed manner.
 
-\subsection{1}
+\subsection{Container on DPDK and SR-IOV}
 A default docker container built on a bare Ubuntu image creates by default one interface that is connected to "docker0" bridge on the host. This is the default networking option in Docker []. 
 %% https://docs.docker.com/network/#scope-of-this-topic
 
@@ -752,7 +723,7 @@ For a comparative study, instead of the host with DPDK based container and packe
 
 The latency was about 8700 micro seconds for a packet rate of 10Mpps.
 
-\subsection{2}
+\subsection{Container on OVS-DPDK}
 The test setup in the previous section used was probably the simplest network possible. The machines were directly connected and the traffic blindly forwarded from one port to another. In a more realistic scenario, there could be multiple containers running on the host and packets forwarded between them. In a container orchestrated environment with Kubernetes, these containers or pods could very well reside in different hosts. This calls for exploring a more generic networking solution.
 
 The default networking provided with Docker, using \lstinline{docker0} bridge is a good solution that would work for containers in one host. Similarly, the overlay network driver in Docker and other third part network plugins such as using Flannel[], Weave Net[2], Calico[3], etc. which also work with Kubernetes are also solutions that could work with little hassle. But none of these methods provide support for a fast data path using DPDK or support virtualization with SR-IOV VFs. However, Open vSwitch is one plausible solution. It supports DPDK and provides a way to easily configure the network using Open Flow. Though it might be an overhead in a simple topology, it could scale well when the network is more complicated with multiple hosts and different types of interfaces such as for management and data since it also supports setting up tunneling interfaces to configure an overlay network which could be helpful with Kubernetes. However, whether the overlay network can support a DPDK based fast data path is still to be explored.
@@ -841,9 +812,9 @@ The Kubernets cluster is built from bare metal machines. To build a cluster from
 
 A MAAS cluster can have two types of controllers, region and rack controller. Since, the setup being built is quite small and the machines can be physically attached to a subnet using only a bridge, just one controller is used. It acts both as region and rack controller. Adding nodes to the cluster can be done by attaching the new machine to the subnet and setting the interface to PXE boot. The controller sends the boot image through the local area network and runs some cloud init scripts to set up the new machine. The new machine goes into "Ready" state and can be acquired while deploying some application such as Kubernetes. Functioning quite like a cloud. For the nodes to have external connectivity, the controller's IP tables have to be modified to enable NAT.
 
-To deploy Kubernetes, the easiest approach, as documented in[], is to deploy it with Juju. This essentially, deploys a out-of-box Kubernetes with one or more masters, worker nodes and other applications such as etcd, flannel, easyrsa, etc. "etcd" is used to distributed key value storage, "flannel" is the network plugin and "easyrsa" is for generating certificates for TLS. For this approach, Juju needs to be deployed first and it needs a dedicated controller. One way is to start a virtual machine in MAAS controller and add it to the cluster and use it as Juju controller. Another approach would be to use any other node in cluster for this. The choice depends on how machines are available and how many are needed for Kuberentes since Juju controller cannot be in Kubernetes. In this experiment, the virtual machine method was used. Juju can be used to deploy a two worker Kubernetes cluster using the command \lstinline{juju deploy cs:bundle/kubernetes-core-251}.
+To deploy Kubernetes, the easiest approach, as documented in[], is to deploy it with Juju. This essentially, deploys a out-of-box Kubernetes with one or more masters, worker nodes and other applications such as etcd, flannel, easyrsa, etc. "etcd" is used to distributed key value storage, "flannel" is the network plugin and "easyrsa" is for generating certificates for TLS. For this approach, Juju needs to be deployed first and it needs a dedicated controller. One way is to start a virtual machine in MAAS controller and add it to the cluster and use it as Juju controller. Another approach would be to use any other node in cluster for this. The choice depends on how machines are available and how many are needed for Kuberentes since Juju controller cannot be in Kubernetes. In this experiment, the virtual machine method was used. Juju was then used to deploy a minimal Kubernetes cluster with two machines using the command, \lstinline{juju deploy cs:bundle/kubernetes-core-251}.
 
-To deploy a simple pod in Kubernetes, create pod manifest file and use kubectl commands to create the pod.
+To deploy a simple pod in Kubernetes, create pod manifest file and use \lstinline{kubectl} commands to create the pod.
 
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
 $ cat > helloworld.yaml <<EOF
@@ -856,23 +827,34 @@ spec:
   - name: test-container
     image: ubuntu:latest
     command: ["/bin/bash"]
-    args: ["-c", "echo SUCCESS"]
+    args: ["-c", "echo SUCCESS; while true; do sleep 1; done"]
 EOF
 $ kubectl create -f helloworld.yaml
 $ kubectl get pods
+NAME            READY     STATUS        RESTARTS   AGE
+test-pod        1/1       Running       0          5s
 $ kubectl logs test-pod
+SUCCESS
 \end{lstlisting}
+
+Another way to deploy Kubernetes is using the tool \lstinline{kubeadm}. This is a Kubernetes project that is still in beta stage but quite good for development purposes. The deployment of Kubernets is quite bare minimalistic while comapred to deploying with Juju. This gives a bit more control. With \lstinline{kubeadm}, the network has to be installed separately which is ideal for most of the work in the thesis since, it can be easily tweaked and modified.
+
 
 \subsection{Scenario 1, Multus}
 \subsection{Scenario 2, Node feature discovery}
 Kubernetes incubator project - Node Feature Discovery
 \subsection{Scenario 3, Kubernetes with OvN}
 Exposing external interface and routing within
+
+%% http://docs.openvswitch.org/en/latest/howto/userspace-tunneling/
 \clearpage
 \section{Results}
 
+\clearpage
 \thesisbibliography
 \begin{thebibliography}{99}
+
+\bibitem{container-vm-comparison} Joy,\ M.,\ A., Performance Comparison Between Linux Containers and Virtual Machines. \textit{International Conference on Advances in Computer Engineering and Applications.} IMS Engineering College, Ghaziabad, India, 2015
 
 %% Alla pilkun j\"alkeen on pakotettu oikea v\"ali \<v\"alily\"onti>-merkeill\"a.
 \bibitem{Kauranen} Kauranen,\ I., Mustakallio,\ M. ja Palmgren,\ V.
@@ -985,96 +967,9 @@ Exposing external interface and routing within
 
 \section{Esimerkki liitteest\"a\label{LiiteA}}
 
-Liitteet eiv\"at ole opinn\"aytteen kannalta v\"altt\"am\"att\"omi\"a ja 
-opinn\"aytteen tekij\"an on 
-kirjoittamaan ryhtyess\"a\"an hyv\"a ajatella p\"arj\"a\"av\"ans\"a ilman liitteit\"a.
-Kokemattomat kirjoittajat, jotka ovat huolissaan
-tekstiosan pituudesta, paisuttavat turhan 
-helposti liitteit\"a pit\"a\"akseen tekstiosan pituuden annetuissa rajoissa.
-T\"all\"a tavalla ei synny hyv\"a\"a opinn\"aytett\"a.   
-
-Liite on itsen\"ainen kokonaisuus, vaikka se t\"aydent\"a\"akin tekstiosaa.
-Liite ei siten ole pelkk\"a listaus, kuva tai taulukko, vaan 
-liitteess\"a selitet\"a\"an aina sis\"all\"on laatu ja tarkoitus. 
-
-Liitteeseen voi laittaa esimerkiksi listauksia. Alla on 
-listausesimerkki t\"am\"an liitteen luomisesta. 
-
-%% Verbatim-ymp\"arist\"o ei muotoile tai tavuta teksti\"a. Fontti on monospace.
-%% Verbatim-ymp\"arist\"on sis\"all\"a annettuja komentoja ei LaTeX k\"asittele. 
-%% Vasta \end{verbatim}-komennon j\"alkeen jatketaan k\"asittely\"a.
-\begin{verbatim}
-	\clearpage
-	\appendix
-	\addcontentsline{toc}{section}{Liite A}
-	\section*{Liite A}
-	...
-	\thispagestyle{empty}
-	...
-	teksti\"a
-	...
-	\clearpage
-\end{verbatim}
-
-Kaavojen numerointi muodostaa liitteiss\"a oman kokonaisuutensa:
-\begin{eqnarray}
-d \wedge A  &=& F, \label{liitekaava1}\\
-d \wedge F  &=& 0. \label{liitekaava2}
-\end{eqnarray}
-
 
 \clearpage
 \section{Toinen esimerkki liitteest\"a\label{LiiteB}}
 
-%% Liitteiden kaavat, taulukot ja kuvat numeroidaan omana kokonaisuutenaan
-%%
-%% Equations, tables and figures have their own numbering in Appendices
-%\renewcommand{\theequation}{B\arabic{equation}}
-%\setcounter{equation}{0}  
-%\renewcommand{\thefigure}{B\arabic{figure}}
-%\setcounter{figure}{0}
-%\renewcommand{\thetable}{B\arabic{table}}
-%\setcounter{table}{0}
-
-Liitteiss\"a voi my\"os olla kuvia, jotka
-eiv\"at sovi leip\"atekstin joukkoon:
-%% Ymp\"arist\"on figure parametrit htb pakottavat
-%% kuvan t\"ah\"an, eik\"a LaTeX yrit\"a siirrell\"a niit\"a
-%% hyv\"aksi katsomaansa paikkaan. 
-%% Ymp\"arist\"o\"a center voi k\"aytt\"a\"a \centering-
-%% komennon sijaan
-%%
-%% Example of a figure, note the use of htb parameters which force
-%% the figure to be inserted here
-\begin{figure}[htb]
-\begin{center}
-\includegraphics[height=8cm]{kuva2.pdf}
-%\includegraphics[height=8cm]{kuva2.jpg}
-%\includegraphics[height=8cm]{kuva2.png}
-%\includegraphics[height=8cm]{kuva2.eps}
-\end{center}
-\caption{Kuvateksti, jossa on liitteen numerointi}
-\label{liitekuva}
-\end{figure}
-%%
-Liitteiden taulukoiden numerointi on kuvien ja kaavojen kaltainen:
-\begin{table}[htb]
-\caption{Taulukon kuvateksti.}
-\label{liitetaulukko}
-\begin{center}
-\fbox{
-\begin{tabular}{lp{0.5\linewidth}}
-9.00--9.55  & K\"aytett\"avyystestauksen tiedotustilaisuus (osanottajat
-ovat saaneet s\"ahk\"opostitse valmistautumisteht\"av\"at, joten tiedotustilaisuus
-voidaan pit\"a\"a lyhyen\"a).\\
-9.55--10.00 & Testausalueelle siirtyminen
-\end{tabular}}
-\end{center}
-\end{table}
-Kaavojen numerointi muodostaa liitteiss\"a oman kokonaisuutensa:
-\begin{eqnarray}
-T_{ik} &=& -p g_{ik} + w u_i u_k + \tau_{ik},  \label{liitekaava3} \\
-n_i    &=& n u_i + v_i.                      \label{liitekaava4}
-\end{eqnarray}
 
 \end{document}
