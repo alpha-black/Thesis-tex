@@ -223,7 +223,7 @@
 %% argument in box brackets. This is done because the title is part of the 
 %% metadata in the pdf/a file, and the metadata cannot contain linebreaks.
 %%
-\thesistitle[Accelerated DPDK in containers for networking nodes]{Accelerated DPDK in containers \\ for networking nodes}
+\thesistitle[Accelerated DPDK in containers for networking nodes]{Accelerated DPDK in containers for networking nodes}
 
 %\thesistitle[Title of the thesis]{Title of\\ the thesis}
 %%
@@ -360,8 +360,7 @@ text must be identical to the text on the abstract page.
 %% Preface
 %%
 \mysection{Preface}
-I want to thank Professor Pirjo Professori and my instructor Dr Alan Advisor for 
-their good and poor guidance.\\
+I want to thank Professor Yu Xiao for her valuable guidance....
 
 \vspace{5cm}
 Otaniemi, 24.4.2018
@@ -389,6 +388,7 @@ NFV         & Network Function Virtualization \\
 OVN         & Open Virtual Netowrk \\
 OvS         & Open vSwitch \\
 SR-IOV      & Single Root IO Vitrualization \\
+VNF         & Virtual Network Function \\
 \end{tabular}
 
 
@@ -414,13 +414,13 @@ In the NFV nomenclature, the software implementation of the network node functio
 
 The scope of the thesis is to focus on the networking aspect of utilizing containers in NFV. An import requirement in NFV is fast packet processing when compared to normal container based deployments. For a comprehensive understanding of container networking scenario and as a baseline for measurements, the thesis starts with exploring container networking in a standalone environment and then moves on to an orchestrated environment with multiple hosts. The main focus is on incorporating Data Plane Development Kit (DPDK) for fast packet processing and Single Root IO Virtualization (SR-IOV) for hardware virtualization, into the various networking solutions explored.
 
-A container orchestrated environment could be visualized as a cluster of multiple hosts with  containers being spawned on request and killed after serving the request. These containers could be spawned on any of the hosts based on a variety of factors. A fast data path in this scenario would include DPDK supported interfaces that are exposed to the external network and also a fast packet forwarding within the cluster to reach the container of interest. Such a data path which does not affect the flexibility of the cluster is one of the key questions driving this thesis. 
+A container orchestrated environment could be visualized as a cluster of multiple hosts with  containers being spawned on request and killed after serving the request. These containers could be spawned on any of the hosts based on a variety of factors. A fast data path in this scenario would include DPDK supported interfaces that are exposed to the external network and also a fast packet forwarding within the cluster to reach the container of interest. Such a data path that does not affect the flexibility of the cluster is one of the key questions driving this thesis. 
 
-DPDK utilizes several techniques for better packet processing such as skipping the kernel network stack and running applications on userspace, using poll mode drivers instead interrupt driven ones, hugepages, Direct Memory Access (DMA) and others. Among them, correct utilization of hugepages is an important aspect especially when multiple DPDK based applications are run simultaneously in the same host. Most of the current container run-time applications such as Docker, LXC do not support hugepage isolation and resource limitation. It is possible that one application could end up consuming or pre-allocating all of the available hugepages. Addressing this drawback to support hugepage isolation in containers is another key aspect of this thesis.
+DPDK utilizes several techniques for better packet processing such as skipping the kernel network stack and running applications on userspace, using poll mode drivers instead interrupt driven ones, hugepages, Direct Memory Access (DMA) and others. Among them, correct utilization of hugepages is an important aspect especially when multiple DPDK based applications are run simultaneously on the same host. Most of the current container run-time applications such as Docker, LXC do not support hugepage isolation and resource limitation. It is possible that one application could end up consuming or pre-allocating all of the available hugepages. Addressing this drawback to support hugepage isolation in containers is another key aspect of this thesis.
 
 Whenever possible, for a better grasp of the performance measurements with DPDK/SR-IOV, a comparative study with and without them is done. For some of the basic tools, only the industry de-facto solutions are considered, such as  Docker for container run-time and Kubernetes for container orchestration. Keeping these constant, the exploration is on the various networking solutions feasible for them and other aspects described above.
 
-The next section in the thesis covers the related technologies utilized, their definitions and how they work. The motivation for them and in some cases their evolution. The third chapter is a prelude to the experimentation part which covers related work and other miscellaneous information. The forth chapter is the core part of the thesis with the experiments, their motivation and in detail, the questions that are trying to answered.
+The next section in the thesis covers the related technologies utilized, their definitions and how they work. The motivation for them and in some cases their evolution. The third chapter covers related work in the field of interest and other miscellaneous information. The forth chapter is the core part of the thesis with the experiments, their motivation and in detail the questions to which the answers are being explored.
 
 \clearpage
 \section{How stuff works}
@@ -608,6 +608,13 @@ $ ip a | grep -A 3 docker0
 Docker supports other networking options such as host, overlay, macvlan. Host networking option in Docker removes the network isolation between the host and the container. Overlay is an overlay network and can be used to connect to other containers in different host managed by Docker swarm. Macvlan assigns a MAC address to the virtual interface in the container and exposes it to a parent host physical interface making it look like a real physical interface. All of the above options are suited for specific use cases. The final option in Docker networking, using network plugins, is the most interesting one. It is an interface to use third part networking plugins, or CNI plugins. The open source CNI plugins for SR-IOV and DPDK could be used to explore fast data path networking in containers.
 
 The test setup consists of two physical machines. Both the machines have a management interface and two SR-IOV interfaces each. The SR-IOV interfaces are connected in back to back forming a closed loop as show in the figure below.
+\begin{figure}[htb]
+\begin{center}
+\includegraphics[height=8cm]{pics/ContainerOnDPDKandSRIOV.png}
+\end{center}
+\caption{Test topology. DPDK based pktgen on one side and a Docker container with DPDK and SR-IOV on the other.}
+\label{liitekuva}
+\end{figure}
 
 One of the machines is used as a packet generator while the other one utilizes virtualization of SR-IOV to push the packet directly to the container. The container also runs a DPDK application that just forwards the packets received on one port to the other. To run DPDK based application, enable SR-IOV Virtual Functions and use CNI plugins with Docker, the host environment has to be configured as described below.
 
@@ -785,7 +792,7 @@ While running the DPDK application inside container, the PCI devices are disable
 Now, as before, the other host starts sending packets at 11Mpps and the latency was observed to be approximately 5000 micro seconds.
 
 \subsection{Fast packet processing in Kubernetes}
-The previous two sections dealt with the networking aspects when containers were hosted on just one  host and packets were generated from another. But in a real scenario, there would be a cluster of many hosts with some container orchestration such as Kubernetes managing them. When a request to deploy a new container or rather a pod, in Kubernetes nomenclature, is received, Kubernetes decides on which host to deploy depending on the requirements to run the pod such as memory, CPU cores and any other constraints that may be provided. Kubernetes has to find a host that fits all the bills. The networking aspects in such a scenario could get tricky. In a Kubernetes deployed pod, there has to be one management interface to communicate with kubelet, which runs on all the worker nodes. Then, for fast packet processing, some other pod interfaces that are connected to the DPDK bound physical interfaces. These DPDK interfaces could be exposed to the external network.
+The previous two sections dealt with the networking aspects when containers were hosted on just one  host and packets were generated from another. But in a real scenario, there would be a cluster of many hosts with some container orchestration such as Kubernetes managing them. When a request to deploy a new container or rather a pod, in Kubernetes is received, Kubernetes decides on which host to deploy depending on the requirements to run the pod such as available memory, CPU cores and any other constraints that may be provided. Kubernetes has to find a host that fits all the bills. The networking aspects in such a scenario could get tricky. In a Kubernetes deployed pod, there has to be one management interface to communicate with kubelet, which runs on all the worker nodes. Then, for fast packet processing, some other pod interfaces that are connected to the DPDK bound physical interfaces. These DPDK interfaces could be exposed to the external network.
 
 Now, when a pod is being deployed in Kubernetes and if it needs external DPDK interfaces, Kubernetes has to decide on which host to deploy the pod. There are three scenarios to be considered here.
 
@@ -848,128 +855,19 @@ Exposing external interface and routing within
 
 %% http://docs.openvswitch.org/en/latest/howto/userspace-tunneling/
 \clearpage
-\section{Results}
+\section{Results and Conclusions}
 
 \clearpage
 \thesisbibliography
 \begin{thebibliography}{99}
 
 \bibitem{container-vm-comparison} Joy,\ M.,\ A., Performance Comparison Between Linux Containers and Virtual Machines. \textit{International Conference on Advances in Computer Engineering and Applications.} IMS Engineering College, Ghaziabad, India, 2015
-
-%% Alla pilkun j\"alkeen on pakotettu oikea v\"ali \<v\"alily\"onti>-merkeill\"a.
-\bibitem{Kauranen} Kauranen,\ I., Mustakallio,\ M. ja Palmgren,\ V.
-  \textit{Tutkimusraportin kirjoittamisen opas opinn\"aytety\"on
-    tekij\"oille.}  Espoo, Teknillinen korkeakoulu, 2006.
-
-\bibitem{Itkonen} Itkonen,\ M. \textit{Typografian k\"asikirja.} 3.\
-  painos.  Helsinki, RPS-yhti\"ot, 2007.
-
-\bibitem{Koblitz} Koblitz,\ N. \textit{A Course in Number Theory and
-    Cryptography. Graduate Texts in Mathematics 114.}  2.\ painos. New
-  York, Springer, 1994.
-
-%% Kun on useampi nimikirjain, jokaisen nimikirjaimen v\"aliin
-%% kuuluu v\"alily\"onti. Oikea v\"alin m\"a\"ar\"a on saatu \<v\"alily\"onnill\"a>
-\bibitem{bcs} Bardeen,\ J., Cooper,\ L.\ N. ja Schrieffer,\ J.\ R.
-  Theory of Superconductivity. \textit{Physical Review,} 1957, vol.\
-  108, nro~5, s.\ 1175--1204.
-
-\bibitem{Deschamps} Deschamps,\ G.\ A. Electromagnetics and
-  Differential Forms. \textit{Proceedings of the IEEE,} 1981, vol.\
-  69, nro~6, s.\ 676--696.
-
-%% Alla esimerkki englanninkielisen tavuttamisen pakottamisesta.
-%% Oletusarvoisesti k\"aytet\"a\"an suomalaista tavutusta, mutta viitteiss\"a
-%% esiintyy usein muunkielisi\"a lauseita, jotka tulevat siten tavutetuksi
-%% suomen kielen s\"a\"ant\"ojen mukaan. T\"am\"an voi korjata \foreignlanguage-
-%% komennolla, jonka ensimm\"ainen parametri on vieraan kielen nimi ja toinen 
-%% on vieraalla kielell\"a tavutettava teksti. 
-\bibitem{Sihvola} Sihvola,\ A.\ et al.
-  \foreignlanguage{english}{Interpretation of measurements of helix 
-    and bihelix superchiral structures.}
-  Teoksessa: Jacob,\ A.\ F. ja
-  Reinert,\ J. (toim.) \textit{Bianisotropics '98 7th International
-    Conference on Complex Media.}  Braunschweig, 3.--6.6.1998.
-  Braunscweig, Technische Universit\"at Braunschweig, 1998, s.\
-  317--320.
-
-%% Alla on suomalainen yhdistelm\"asukunimi. Sen nimien v\"aliss\"a 
-%% k\"aytet\"a\"an yhdysmerkki\"a l. tavuviivaa, kirjoitetaan -.
-\bibitem{Lindblom} Lindblom-Yl\"anne,\ S. ja Wager,\ M.  Tieteellisten
-  opinn\"aytet\"oiden ohjaaminen. Teoksessa: Lindblom-Yl\"anne,\ S. ja
-  Nevgi,\ A. (toim.) \textit{Yliopisto- ja korkeakouluopettajan
-    k\"asikirja.}  Helsinki, WSOY, 2004, s.\ 314--325.
- 
-\bibitem{Miinusmaa} Miinusmaa,\ H. Neliskulmaisen rei\"an poraamisesta
-  kolmikulmaisella poralla. Diplomity\"o, Teknillinen korkeakoulu,
-  konetekniikan osasto, Espoo, 1977.
-
-%% T\"ass\"a taas pakotettu englanninkielinen tavutus. 
-%% Pedanttinen kirjoittaja pakottaa tietysti jokaiseen englanninkieliseen
-%% lauseeseen englannin tavutuksen, mutta t\"ass\"a esityksess\"a ei n\"ain ole
-%% tehty selvyyden ja l\"ahdekoodin luettavuuden takia. 
-\bibitem{Loh} Loh,\ N.\ C. High-Resolution Micromachined
-  Interferometric Accelerometer. Master's Thesis, Massachusetts
-  Institute of Technology, Cambridge,
-  \foreignlanguage{english}{Massachusetts,} 1992.
-
-\bibitem{Lonnqvist} L\"onnqvist,\ A.
-  \foreignlanguage{english}{Applications of hologram-based compact
-    range: antenna radiation pattern, radar cross section, and
-    absorber reflectivity measurements.}
-  V\"ait\"oskirja, Teknillinen korkeakoulu, s\"ahk\"o- ja tietoliikennetekniikan
-  osasto, 2006.
-
-\bibitem{sfs} SFS 5342. Kirjallisuusviitteiden laatiminen. 2.\ painos.
-  Helsinki, Suomen standardisoimisliitto, 2004. 20~s.
-
-\bibitem{haastattelu} Palmgren,\ V. Suunnittelija. Teknillinen
-  korkeakoulu, kirjasto. Otaniementie 9, 02150 Espoo. Haastattelu
-  15.1.2007.
-
-\bibitem{Ribeiro} Ribeiro,\ C.\ B., Ollila,\ E. ja Koivunen,\ V.
-  \foreignlanguage{english}{Stochastic Maximum-Likelihood Method for
-    MIMO Propagation Parameter Estimation.}
- \textit{IEEE Transactions
-    on Signal Processing,} verkkolehti, vol.\ 55, nro~1, s.\ 46--55.
-  Viitattu 19.1.2007. Lehti ilmestyy my\"os painettuna. DOI:
-  10.1109/TSP.2006.882057.
-
-\bibitem{Stieber} Stieber,\ T. GnuPG Hacks. \textit{Linux Journal,}
-  verkkolehti, 2006, maaliskuu, nro~143. Viitattu 19.1.2007. Lehti
-  ilmestyy my\"os painettuna. Saatavissa:
-  \url{http://www.linuxjournal.com/article/8732.}
-
-\bibitem{kone} Pohjois-Koivisto,\ T. Voiko kone tulevaisuudessa arvata
-  tahtosi?  \textit{Apropos,} verkkolehti, helmikuu, nro~1, 2005.
-  Viitattu 19.1.2007.  Saatavissa:
-  \url{http://www.apropos.fi/1-2005/prima.php.}
-
-\bibitem{Adida} Adida,\ B.  Advances in Cryptographic Voting Systems.
-  Verkkodokumentti. Ph.D.\ Thesis, Massachusetts Institute of
-  Technology, Cambridge, 
-  \foreignlanguage{english}{Massachusetts,}
-  2006. Viitattu 19.1.2007.  Saatavissa:
-  \url{http://crypto.csail.mit.edu/~cis/theses/adida-phd.pdf.}
-
-\bibitem{viittaaminen} Kilpel\"ainen,\ P. WWW-l\"ahteisiin viittaaminen
-  tutkielmatekstiss\"a. Verkkodokumentti. P\"aivitetty 26.11.2001.
-  Viitattu 19.1.2007. Saatavissa:
-  \url{http://www.cs.uku.fi/~kilpelai/wwwlahteet.html.}
-
 \end{thebibliography}
 
 %% Appendices
 %% If you don't have appendices, remove \clearpage and \thesisappendix below.
 \clearpage
-
 \thesisappendix
-
-\section{Esimerkki liitteest\"a\label{LiiteA}}
-
-
-\clearpage
-\section{Toinen esimerkki liitteest\"a\label{LiiteB}}
-
+\section{Appendix A\label{LiiteA}}
 
 \end{document}
