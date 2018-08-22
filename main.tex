@@ -574,7 +574,7 @@ Kubelet for local configurations
 
 
 \clearpage
-\section{Core - Implementation, experiments}
+\section{Latency Measurements}
 This section covers the actual experimentation part of the thesis with the motivation to do so. The first two subsections explore a fast data path in container running in a single host. The first of those is a DPDK based container running on a host with SR-IOV interfaces being used for forwarding packets from the NIC to the container and back. The second subsection is a study on Open vSwitch (OvS) and DPDK acceleration. In this case, there is a OvS bridge receiving packets from the NIC and forwarding to the container and back. There is a comparative study to understand how much acceleration is brought about by DPDK.
 
 The remaining subsections consider only a cluster environment with Kubernetes. For a fast data path in this case, multiple scenarios have been considered and some potential solutions discussed and experimented with. For this, initially a Kubernetes cluster is built on bare metal using MAAS (Metal-as-a-Service) and \lstinline{kubeadm} or Juju. Then the different scenarios are outlined and discussed one after the other in a detailed manner.
@@ -732,7 +732,7 @@ pktgen> set 1 dst mac aa:bb:cc:dd:ee:00
 pktgen> set 1 size 96
 pktgen> start 1
 \end{lstlisting}
-Above, 1 refers to the port number we are generating packets. And with \lstinline{start 1}, packets are generated at approximately 11 million packets per second (Mpps), as reported by pktgen.
+Above, 1 refers to the port number used for generating packets. And with \lstinline{start 1}, packets are generated at approximately 11 million packets per second (Mpps), as reported by pktgen.
 
 The latency was about 800 micro seconds.
 
@@ -860,19 +860,44 @@ Another way to deploy Kubernetes is using the tool \lstinline{kubeadm}. This is 
 \subsection{Scenario 1, Multus}
 \subsection{Scenario 2, Node feature discovery}
 Kubernetes incubator project - Node Feature Discovery
-\subsection{Scenario 3, Kubernetes with OvN}
+\subsection{Scenario 3, Kubernetes with OVN}
 Exposing external interface and routing within
 
 %% http://docs.openvswitch.org/en/latest/howto/userspace-tunneling/
 
 \clearpage
-\section{Kubernetes scheduler to pick the right node}
+\section{Latency based scheduling}
+The previous section explored various fast data path solution for a container in a stand alone and also in a cluster environment. Based on the results, it is clear that some of the solutions provide much better latency results. The latency introduced in some of the solutions were software induced and in some others, due to the extra hops between the nodes. When DPDK is used in the native mode, the latency was found to be about 800 micro seconds. With the addition of OvS running on DPDK in between, the latency shot up to 5000 micro seconds. The reason was clearly observed to be the addition of \lstinline{vhostuser} ports to connect the DPDK interfaces to the container. This was a six fold increase but still a better result than using the normal kernel stack. In the Kubernetes scenario, with Multus, the latency there was not affected. This is understandable since Multus calls all CNI plugins configured for the container and attaches the interfaces directly to the container not interfering and adding extra softwre overhead. Hence, a reading of 800 micro seconds on average was observed. The other two solutions explored for Kubernetes were using OvS and OvN. The former was similar to OvS standalone scenario but with the knowledge of the hosts in the cluster with DPDK supported interface. This eventually turns out to be the previous scenario and similar readings were observed. The final scenario with OVN configured a network within the cluster to route data packets between hosts. The overhead here was due to the extra hops between hosts and the interfaces that do not support DPDK.
 
+This section is an attempt to utilize these results while deploying containers in a cluster so that their latency requirements can be met. The idea is that depending on the latency requirement given at the time of creating a container in a cluster, the right host is chosen. For instance, if the latency requirement could be met with OvS on DPDK and with Multus, OvS is chosen since Multus provides lower latency and could be used for containers with more stringent latency requirements. Again, Kubernetes is used as the container orchestration and Docker as the run-time.
 
+\subsection{A Kubernetes Scheduler}
+The default scheduler in Kubernetes considers only CPU and memory resources in the worker nodes while scheduling pods[1]. This implies, a new method to provide the latency requirement for a pod has to be found and also a scheduler capable of implementing this.
+
+Annotations in Kubernetes could be used to specify the latency requirements for a pod during deployment. As per the Kubernetes documentation [2], annotations are used for specifying meta-data and can be retrieved using the client libraries. For this purpose, the latency requirement is given as a \lstinline{key} and \lstinline{value} pair.
+% [1] https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#resource-types
+% [2] https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+  annotations:
+    latency : "5000"
+\end{lstlisting}
+
+In Kubernetes scheduler, there are multiple steps involved while deciding which node to bind the pod. In the first step, the scheduler filters out the incompatible nodes. For instance, nodes that do not have enough CPU or memory. Then, from the compatible nodes, the scheduler assigns priority to them while trying to distribute the work load among all the worker nodes. In the last step, the scheduler binds the pod to the node with the highest priority and informs the API server [].
+% https://github.com/fabric8io/kansible/blob/master/vendor/k8s.io/kubernetes/docs/devel/scheduler.md
+
+There are different ways to affect the scheduling decision in Kubernetes. One way is to modify the Kubernetes source code and implement the required features. The next method is to implement a Kubernetes scheduler extender. A scheduler extender runs on an IP and port that is accessible to the default scheduler and is called once the default scheduler is done with the first two steps mentioned above, filtering and prioritizing. This is like an extra step in the scheduling process. The final approach is to write a new scheduler that replaces the existing default scheduler. This could also be run as a pod in the cluster itself.
+
+The source code scheduler implemented for the thesis is listed in Appendix \ref{LiiteA}. The scheduler communicates with the Kubernetes API server using the \lstinline{kubeconfig} file or it could be run as a pod in the cluster. It initially gets a list of nodes in the cluster and pods that are configured to use scheduler with name \lstinline{latency-scheduler}. It then runs the scheduling algorithm, finds the node that satisfies the latency requirement and sends a Bind message to the API server to bind the pod to that node. From a pod perspective, to use this scheduler, the scheduler name and latency requirements have to be specified in the manifest.
+
+The second important factor to be addressed for the scheduler to work is to discover the hardware features of the worker nodes; specifically the support for DPDK and SR-IOV interfaces. For this, a daemon set is used[]. A Daemon set runs on all the nodes in Kubernetes. This could be utilized to fetch the interface hardware information and report to the API server. The code to implement this daemon set is listed in Appendix \ref{LiiteB} along with the daemon set manifest file and the Dockerfile to build a Golang container with the application. The code currently adds a new \lstinline{map} entry of \lstinline{dpdk:<number-of-dpdk-interfaces>} to \lstinline{node.Labels} [2] where \lstinline{node} is an object of the \lstinline{Node} structure in Kubernetes Core v1. This information is in turn used by the scheduler.
+
+% https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/
+% https://godoc.org/k8s.io/api/core/v1#Node
 
 \clearpage
-\section{Results and Conclusions}
-
+\section{Future Work}
+1. Optimizing DPDK applications in general and in Kubernetes - NUMA
+2. Hugepage isolation
 \clearpage
 \thesisbibliography
 \begin{thebibliography}{99}
@@ -885,5 +910,365 @@ Exposing external interface and routing within
 \clearpage
 \thesisappendix
 \section{Appendix A\label{LiiteA}}
+Code written in Golang to implement the basic Kubernetes scheduler along with a Pod manifest to chose this scheduler.
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ cat main.go
+package main
+
+import (
+    "flag"
+    "fmt"
+    apiv1 "k8s.io/api/core/v1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/client-go/kubernetes"
+    "k8s.io/client-go/rest"
+    "k8s.io/client-go/tools/clientcmd"
+    "log"
+    "os"
+)
+
+func main() {
+    log.Println("Latency scheduler")
+
+    // Parse arguments
+    var SchedulerName string
+    flag.StringVar(&SchedulerName, "scheduler-name", "latency-scheduler",
+            "Name for the k8s scheduler")
+
+    defaultKubeConfig := os.Getenv("HOME") + "/.kube/config"
+    var ns, label, field, kubeconfig string
+    
+    flag.StringVar(&ns, "namespace", "default", "namespace")
+    flag.StringVar(&label, "label", "", "Label selector")
+    flag.StringVar(&field, "field", "", "Field selector")
+    flag.StringVar(&kubeconfig, "kubeconfig", defaultKubeConfig,
+                "Absoulte path to kubeconfig")
+    var runInCluster = flag.Bool("run-in-cluster", false, "Run in cluster as a pod?")
+    var timeout = flag.Int64("timeout", 5, "Timeout for watching for new pods")
+
+    flag.Parse()
+
+    // Get clientset. If running this process as a pod in the cluster,
+    // remove both args in func BuildConfigFromFlags
+    var config *rest.Config
+    var err error
+    if *runInCluster {
+            config, err = rest.InClusterConfig()
+    } else {
+            config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+    }
+    if err != nil {
+            log.Fatal(err)
+    }
+
+    clientset, err := kubernetes.NewForConfig(config)
+    if err != nil {
+            log.Fatal(err)
+    }
+
+    corev1 := clientset.CoreV1()
+
+    listOptions := metav1.ListOptions{
+            LabelSelector: label,
+            FieldSelector: field,
+    }
+
+    nodes, err := corev1.Nodes().List(listOptions)
+    if err != nil {
+            log.Fatal(err)
+    }
+
+    watchListOptions := metav1.ListOptions{
+            Watch:          true,
+            TimeoutSeconds: timeout,
+            LabelSelector:  label,
+            FieldSelector:  field,
+    }
+    podWatcher, err := corev1.Pods(ns).Watch(watchListOptions)
+    if err != nil {
+            log.Fatal(err)
+    }
+
+    go func() {
+            for {
+                  event := <-podWatcher.ResultChan()
+                    pod, ok := event.Object.(*apiv1.Pod)
+                    if !ok {
+                            log.Fatal("Failed retreiving pod")
+                    }
+                    if pod.Status.Phase == "Pending" && pod.Spec.SchedulerName == SchedulerName {
+                            SchedulePod(*pod, *nodes, clientset)
+                    }
+            }
+    }()
+    fmt.Scanln()
+    log.Println("Done")
+}
+
+$ cat scheduler.go
+package main
+
+import (
+    "errors"
+    apiv1 "k8s.io/api/core/v1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/client-go/kubernetes"
+    "log"
+    "strconv"
+)
+
+const (
+    LATENCY_WITH_HOPS   = 5000
+    LATENCY_WITH_MULTUS = 800
+    LATENCY_DEFAULT     = 8000
+    LATENCY_MARGIN      = 150
+)
+
+func Bind(pod *apiv1.Pod, node *apiv1.Node, clientset *kubernetes.Clientset) {
+    b := &apiv1.Binding{
+            ObjectMeta: metav1.ObjectMeta{
+                    Namespace: (*pod).Namespace,
+                    Name:      (*pod).Name,
+            },
+            Target: apiv1.ObjectReference{
+                    Kind: "Node",
+                    Name: (*node).Name,
+            },
+    }
+    corev1 := clientset.CoreV1()
+    err := corev1.Pods((*pod).Namespace).Bind(b)
+    if err != nil {
+            log.Fatal(err)
+    }
+}
+
+func FindNode(nodes apiv1.NodeList, requirement int) (*apiv1.Node, error) {
+    for _, node := range nodes.Items {
+        log.Println("Node labels")
+        for key, val := range node.Labels {
+            log.Printf(" %s %s\n", key, val)
+
+            if key == "dpdk" {
+                numOfIfs, err := strconv.Atoi(val)
+                if err != nil {
+                    return nil, err
+                }
+                log.Printf("Node %s with %d dpdp interfaces\n", node.Name, numOfIfs)
+                switch requirement {
+                case LATENCY_WITH_MULTUS:
+                    if numOfIfs > 0 {
+                        return &node, nil
+                    }
+                case LATENCY_WITH_HOPS:
+                    if numOfIfs == 0 {
+                        return &node, nil
+                    }
+                default:
+                    return nil, errors.New("Cannot be scheduled")
+                }
+            }
+        }
+    }
+    return nil, errors.New("Cannot be scheduled")
+}
+
+func FitPod(latency int, nodes apiv1.NodeList) (*apiv1.Node, error) {
+    if latency < LATENCY_MARGIN+LATENCY_WITH_MULTUS {
+            return FindNode(nodes, LATENCY_WITH_MULTUS)
+    }
+    return nil, errors.New("Not a proper latency value")
+}
+
+func SchedulePod(pod apiv1.Pod, nodes apiv1.NodeList, clientset *kubernetes.Clientset) {
+    log.Printf("Scheduling pod \"%s\" to nodes\n", pod.Name)
+    for _, node := range nodes.Items {
+            log.Printf("\t%s\n", node.Name)
+    }
+
+    var keyFound bool = false
+    for key, val := range pod.Annotations {
+        if key == "latency" {
+            latencyVal, err := strconv.Atoi(val)
+            if err != nil {
+                log.Fatal(err)
+            }
+
+            node, err := FitPod(latencyVal, nodes)
+            if err != nil {
+                log.Fatal(err)
+            }
+
+            Bind(&pod, node, clientset)
+            log.Println(val)
+            keyFound = true
+        }
+    }
+    if !keyFound {
+        log.Println("Pod annotation with [latency: value] needed")
+    }
+}
+
+$ cat pod.yaml 
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-latency
+  annotations:
+    latency : "100"
+spec:  # specification of the pod's contents
+  schedulerName: latency-scheduler
+  containers:
+  - name: busybox-latency-cont
+    image: "busybox"
+    command: ["top"]
+    stdin: true
+    tty: true
+
+\end{lstlisting}
+
+\section{Appendix B\label{LiiteB}}
+The code written in Golang to check if a node has DPDK supported interfaces. This is run as a Daemon Set in Kubernetes.
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ cat main.go 
+package main
+
+import (
+    "flag"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/client-go/kubernetes"
+    "k8s.io/client-go/rest"
+    "k8s.io/client-go/tools/clientcmd"
+    "log"
+    "os"
+    "strconv"
+)
+
+func main() {
+    var runInCluster = flag.Bool("run-in-cluster", false, "Run in cluster as a pod?")
+
+    flag.Parse()
+
+    var config *rest.Config
+    var err error
+    if *runInCluster {
+            config, err = rest.InClusterConfig()
+    } else {
+        homeDir := os.Getenv("HOME")
+        config, err = clientcmd.BuildConfigFromFlags("", homeDir+"/.kube/config")
+    }
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    clientset, err := kubernetes.NewForConfig(config)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    corev1 := clientset.CoreV1()
+
+    hostname, err := os.Hostname()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    node, err := corev1.Nodes().Get(hostname, metav1.GetOptions{})
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Get interface details on the node
+    ifcount, err := GetIfInfo()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    if node.Labels == nil {
+        node.Labels = make(map[string]string)
+    }
+    node.Labels["dpdk"] = strconv.Itoa(ifcount)
+
+    corev1.Nodes().Update(node)
+}
+
+$ cat if.go 
+package main
+
+import (
+    "bufio"
+    "os/exec"
+    "strings"
+)
+
+func CheckNameIntel(line string) bool {
+    validIfNames := []string{"82571", "82572", "82573", "82574",
+        "82583", "ICH8", "ICH9", "ICH10", "PCH", "PCH2", "I217",
+        "I218", "I219"}
+
+    for _, name := range validIfNames {
+            if strings.Contains(line, name) {
+                    return true
+            }
+    }
+    return false
+}
+
+// Returns only count to DPDK interfaces now
+func GetIfInfo() (count int, err error) {
+    lspciCmd := exec.Command("lspci")
+
+    lspciOutput, err := lspciCmd.Output()
+    if err != nil {
+        return 0, err
+    }
+
+    var ifCount int = 0
+
+    scanner := bufio.NewScanner(strings.NewReader(string(lspciOutput)))
+    for scanner.Scan() {
+        if strings.Contains(scanner.Text(), "Ethernet controller") &&
+            strings.Contains(scanner.Text(), "Intel") {
+            if CheckNameIntel(scanner.Text()) {
+                ifCount++
+            }
+        }
+    }
+    return ifCount, nil
+}
+
+$ cat Dockerfile 
+FROM golang:1.10.3
+
+ADD . /go/src/github.com/alpha-black/k8s-node-iftype-discover
+WORKDIR /go/src/github.com/alpha-black/k8s-node-iftype-discover
+RUN go get "k8s.io/client-go/kubernetes"
+RUN go get "k8s.io/client-go/rest"
+RUN go install
+
+$ cat ds.yaml 
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-if-discovery
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: node-if-discovery
+  template:
+    metadata:
+      labels:
+        name: node-if-discovery
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      containers:
+      - name: node-if-discovery-container
+        image: k8s-node-iftype-ds:1.0
+        command: ["./go/bin/k8s-node-iftype-discovery", "--logtostderr", "--run-in-cluster=true"]
+        imagePullPolicy: IfNotPresent
+
+\end{lstlisting}
 
 \end{document}
