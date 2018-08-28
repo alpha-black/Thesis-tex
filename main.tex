@@ -409,19 +409,19 @@ VNF         & Virtual Network Function \\
 \thispagestyle{empty}
 In telecommunication industry, the network node functions have traditionally run on operator proprietary hardware which are dedicated for a specific purpose, known as ASICs (Application Specific Integrated Circuits). This has led to long development and deployment cycles, higher cost of operation, etc., thereby hindering rapid technological advancement in the field. Slowly the network node functions are being replaced by virtualized software solutions that can run on generic computing hardware; consequently addressing the above problems and making the network more flexible. This network architecture where virtualized software solutions are chained together to form network node functions is called Network Function Virtualization (NFV).
 
-In the NFV nomenclature, the software implementation of the network node functions or sub-functions are referred to as Virtual Network Functions (VNF). For instance, a network firewall, a DHCP server or a NAT function. The current de-facto VNF implementations run on virtual machines such as a Kernel-based Virtual Machine (KVM). But with the recent advent of containers and their gaining popularity due to some of their obvious advantages over virtual machines, there is a need to explore their suitability in NFV. Containers are comparatively light weight and utilize the same host kernel when compared to virtual machines. They can be booted up with minimum latency\cite{container-vm-comparison} which implies, container based deployments focus on on-demand spawning of the containerized application. For example, a NAT application running on a container could be spawned up based on the number of clients utilizing it, with one container handling one or a fixed number of clients. However, utilizing containers in NFV is still in its nascent stages and there are quite a few issues to be explored and addressed [][].
+In the NFV nomenclature, the software implementation of the network node functions or sub-functions are referred to as Virtual Network Functions (VNF). For instance, a network firewall, a DHCP server or a NAT function. The current de-facto VNF implementations run on virtual machines such as a kernel-based Virtual Machine (KVM). But with the recent advent of containers and their gaining popularity due to some of their obvious advantages over virtual machines, there is a need to explore their suitability in NFV. Containers are comparatively light weight and utilize the same host kernel when compared to virtual machines. They can be booted up with minimum latency\cite{container-vm-comparison} which implies, container based deployments focus on on-demand spawning of the containerized application. For example, a NAT application running on a container could be spawned up based on the number of clients utilizing it, with one container handling one or a fixed number of clients. However, utilizing containers in NFV is still in its nascent stages and there are quite a few issues to be explored and addressed [][].
 %% [ https://www.redhat.com/blog/verticalindustries/is-nfv-ready-for-containers/ ], there are several on going studies and  containerization in NFV is still in a nascent stage and  As listed in [ https://www.ietf.org/proceedings/94/slides/slides-94-nfvrg-11.pdf ], some of the key features needed in NFV environment are performance, portability/scalability and isolation. 
 
 The scope of the thesis is to focus on the networking aspect of utilizing containers in NFV. An important requirement in NFV is fast packet processing when compared to normal container based deployments. For a comprehensive understanding of container networking scenario and as a baseline for measurements, the thesis starts with exploring container networking in a standalone environment and then moves on to an orchestrated environment with multiple hosts. The real world use cases mostly rely to an orchestrated environment. The main focus is on incorporating Data Plane Development Kit (DPDK) for fast packet processing and Single Root IO Virtualization (SR-IOV) for hardware virtualization, into the various networking solutions explored.
 
-A container orchestrated environment could be visualized as a cluster of multiple hosts with containers being spawned on request and killed after serving the request. These containers could be spawned on any of the hosts based on a variety of factors. The orchestrator runs on one host and acts as the master. It normally has a scheduler that decides on which of the other hosts to deploy the container based on the provided requirements of the container and different hardware features supported by different hosts. In the scope of the thesis, the hardware features that are of interest are the support for DPDK and SR-IOV interfaces. 
+As depicted in Figure \ref{fig-intro}, a container orchestrated environment could be visualized as a cluster of multiple hosts with containers being spawned on request and killed after serving the request. These containers could be spawned on any of the hosts based on a variety of factors. The orchestrator runs on one host and acts as the master. It normally has a scheduler that decides on which of the other hosts to deploy the container based on the provided requirements of the container and different hardware features supported by different hosts. In the scope of the thesis, the hardware features that are of interest are the support for DPDK and SR-IOV interfaces. 
 
 \begin{figure}[htb]
 \begin{center}
 \includegraphics[height=8cm,width=15cm]{pics/ClusterDiag.png}
 \end{center}
 \caption{A cluster of nodes with one acting as a master. The other nodes can have different hardware features that are supported}
-\label{liitekuva}
+\label{fig-intro}
 \end{figure}
 
 The objective of the thesis is to find a fast data plane solution in a container orchestrated environment. There are different scenarios considered based on the availability and features supported by different hosts in the cluster and an intelligent way to deploy the container in the host that meets the latency requirements of the containerized application. To this extend, the topology considers interfaces with DPDK or SR-IOV support that exposed to the external network to some of the hosts in the cluster and also a fast packet forwarding within the cluster to reach the container of interest. In essence, a networking solution that does not affect the flexibility of the cluster and the scheduling decision is done on fly. 
@@ -434,32 +434,33 @@ The next section in the thesis covers the related technologies utilized, their d
 
 \clearpage
 \section{How stuff works}
-This section describes the main technologies, tools and other components used in the thesis and how they work.
+This section describes the main technologies and tools used in the thesis and how they work.
+
 \subsection{Data Plane Development Kit, DPDK}
 DPDK is a "set of libraries and drivers"[1] that enable fast packet processing. It is an open source software framework that can be used to build fast networking applications and is maintained by the Linux Foundation[2]. As compared to a normal kernel network stack, DPDK can provide about twenty five percent [3] improvement in packet processing speed.
+%% [1] “DPDK, Data Plane Development Kit”, Retrieved from dpdk.org
+%% [2] “Linux Foundation Projects”, Retrieved from https://www.linuxfoundation.org/projects/
+%% [3] https://builders.intel.com/university/networkbuilders/course/dpdk-101
 
-The driving factor behind the development of DPDK is to address the handling of extremely fast packet rates, especially in a communication network infrastructure, where the packet sizes are typically smaller and packet rates much higher. The average CPU cycles available for handling a packet is much less. For instance, a 10 Gigabit Ethernet card receiving packets of size 1024 bytes would receive 1.25 million packets per second. A CPU with 2GHz clock cycles handling these packets will have 1600 cycles per packet. For a packet size of 64 bytes, this would be 19.5 million packets per second and 102 cycles per packet. 
 
-DPDK utilizes a verity of techniques to address improve the packet processing. Primarily, it uses Poll Mode Drivers (PMD) instead of interrupt driver drivers to handle packets. In traditional packet handling, when a packet is received, the CPU does a context switching from the userspace process to kernel, runs the Interrupt Service Routine (ISR) and switches back to userspace. This is a big overhead especially for higher packet rates. Poll Mode Drivers run on the userspace and use a dedicated CPU core to handle the traffic on one or multiple interfaces. DPDK uses pthread affinity to disable the kernel scheduler from utilizing those cores.
+The driving factor behind the development of DPDK was to address the handling of extremely fast packet rates, especially in a communication network infrastructure, where the packet sizes are typically smaller and packet rates much higher. The average CPU cycles available for handling a packet is much less when the traditional network stack is used. For instance, a 10 Gigabit Ethernet card receiving packets of size 1024 bytes would receive 1.25 million packets per second. A CPU with 2GHz clock cycles handling these packets will have 1600 cycles per packet. On the other hand, when the packet size is smaller, say 64 bytes, this would be 19.5 million packets per second received and 102 CPU cycles available per packet. The CPU should process every packet with just 102 cycles and this quite a small value.
 
-DPDK utilizes hugepages. Hugepages simply imply bigger page size. The standard Linux page size is 4kB while hugepage size could be 2MB or 1GB. In a normal memory access, the virtual memory address needs to be translated to physical memory before it can be accessed. The critical factor affecting performance is the TLB hit. When bigger page sizes are used, there are fewer pages and higher probability of TLB hit.
+DPDK utilizes a verity of techniques to address improving the packet processing. Primarily, it uses Poll Mode Drivers (PMD) instead of interrupt driven ones for packet handling. In traditional method, when a packet is received, the CPU does a context switching from the userspace process to kernel. It then runs the Interrupt Service Routine (ISR) and switches back to userspace. This is a big overhead especially for higher packet rates. Poll Mode Drivers run on the userspace and use a dedicated CPU core to handle the traffic on one or multiple interfaces. The CPU continuously polls the kernel network driver and the utilization hits close to hundred percent. The can be checked with \lstinline{top} command in Linux. DPDK uses pthread affinity to disable the kernel scheduler from utilizing those cores.
+
+DPDK utilizes hugepages. Hugepages simply imply bigger page size. The standard Linux page size is 4kB while hugepage size could be 2MB or 1GB. In a normal memory access, the virtual memory address needs to be translated to physical memory before it can be accessed. The process is shown in the figure below. The critical factor affecting performance is the TLB hit. When bigger page sizes are used, there are fewer pages and higher probability of TLB hit.
+
+% >>PIC
+
+Another feature utilized in DPDK is Direct Memory Access. DPDK uses Direct Memory Access to speed up packet buffer copying. Compared to a normal kernel network stack, when a packet is received, DPDK uses DMA to directly lift the buffer to user space. In traditional packet handling in the kernel stack involves copying of buffer multiple times such as, from the NIC buffer to kernel socket buffer (\lstinline{skbuf} in Linux) and from there to the userspace. This reduces performance due to the copying overhead and also due to loss of localization of data leading to fewer cache hits. The method used in DPDK is called zero-copy.
 
 Software prefetching in addition to H/W prefetching. 
-
 Intel DDIO : Available only in some supported network cards. Network packets are directly put into L3 cache instead of being DMA'd into main memory.
 
 Cache alignment : Intel cache lines are 64bytes. Cache alignment increases performance. If data fetched from memory is put in different cache lines, it would require multiple cache fetches to retrieve the data. Alignment, putting in one cache line, decreases cache reads.
 
-DPDK uses Direct Memory Access to speed up packet buffer copying. Compared to a normal kernel network
-stack, when a packet is received, DPDK uses DMA to directly lift the buffer to user space. In traditional packet handling in the kernel stack involves copying of buffer multiple times such as, from the NIC buffer to kernel socket buffer (skbuf in Linux) and from there to the userspace. This reduces performance due to the copying overhead and also due to loss of localization of data leading to fewer cache hits. The method used in DPDK called zero-copy.
-
 Most of the DPDK components run on the userspace avoiding context switching altogether. The packets received on an interface are DMA'd directly to the poll mode drivers. 
 
 Modes of operation of a DPDK application - Run to completion. Each core is assigned a port or a set of ports. The core does the I/O specifically for that port. It accept the incoming packet, process it and send it out through the same port or set of ports. Pipeline model - One core is dedicated to just I/O. All packets received at this port and then sent to different cores using ring buffers. It is more complex and could result in packet order being not maintained.
-
-%% [1] “DPDK, Data Plane Development Kit”, Retrieved from dpdk.org
-%% [2] “Linux Foundation Projects”, Retrieved from https://www.linuxfoundation.org/projects/
-%% [3] https://builders.intel.com/university/networkbuilders/course/dpdk-101
 
 The main components of DPDK are the core libraries, Poll Mode Drivers for various supported Network Interface Cards (NICs) and other libraries that deal with packet classification, Quality of Service (QoS) and specific to the different platforms [4]. All of these libraries run on the userpace. Also, apart from theses, DPDK uses PCI drivers in the kernel such as IGB-UIO or VFIO-PCI that do basic functionality. When an interface is bound to DPDK, it is detached from the normal kernel driver and attached to one of these DPDK drivers in the kernel.
 
@@ -468,16 +469,25 @@ The main components of DPDK are the core libraries, Poll Mode Drivers for variou
 The core libraries in DPDK has an Environment Abstraction Layer (EAL) which hides or abstracts the platform from the libraries and applications running above it. This also deals with memory allocation in huge pages and PCI related buffer handling. DPDK does not allocate memory at run-time but rather pre-allocates memory during initialization. For packet processing, use memory from pool. Return after use. The libraries related to allocating pool of memory (Mempool) consisting of memory buffer (Mbuf) and lockless queues or ring buffers for handling them are part of the core library.
 
 \subsection{Single Root IO Virtualization, SR-IOV}
-SR-IOV is the hardware virtualization of a PCI Express (PCIe) device, or specifically, a NIC, into multiple virtual devices that can be directly assigned to an instance of a virtual machine or a container. SR-IOV has a Physical Function (PF) which acts like a normal PCIe device and multiple Virtual Functions (VF) that act like quite lightweight but with dedicated Rx/Tx queues. In a virtual machine context, the host machine kernel can be bypassed and the packets can flow directly between the VF and PF.
+SR-IOV is the hardware virtualization of a PCI Express (PCIe) device, or specifically, a Network Interface Card, into multiple virtual devices that can be directly assigned to an instance of a virtual machine or a container. SR-IOV has a Physical Function (PF) which acts like a normal PCIe device and multiple Virtual Functions (VF) that are lightweight functions with dedicated Rx/Tx queues[24]. In a virtual machine context, the host machine kernel can be bypassed and the packets can flow directly between the VF and PF.
 
-Consider the scenario where one host is running multiple Virtual Machines (VM) and a NIC receiving and transmitting packets for all those VMs. Without any hardware virtualization, when a packet is received by the NIC, it triggers an interrupt to the CPU core that is assigned for handling NIC interrupts. This core services the request and examines the packet. Based on the MAC address or VLAN tag, it forwards the packet to the correct VM by triggering another interrupt on the core that is servicing the virtual machine. This is an overhead since there are multiple interrupt handling in the host even before the packet is transferred to the guest operating system and also there is an extra copy of the packet from the host to the VM. Moreover, when the packet rate is high, one core handling all the packets for all the VMs can be a severe bottle neck for a high packet rate. As an enhancement to this, Intel proposed VMDq [1] technology which has separate packet queues for each core. The received packets are put into one of the queues based on the destination MAC or VLAN. Each core services its packet queue by copying the buffer to the VM. There is distribution of work here and a good performance enhancement. An even further enhancement is SR-IOV in which the NIC has separate packet queues for each Virtual Function. When a packet is received, it is sorted to one of the VF queues based on the destination MAC address or VLAN tag. The VF then pushes the packet up the virtual machine directly without involving the CPU using Direct Memory Access (DMA). SR-IOV needs CPU I/O virtualization technology such as Intel VT-d or AMD-Vi enabled for the DMA to the virtual machine.
+\begin{figure}[htb]
+\begin{center}
+\includegraphics[height=8cm]{pics/SRIOV-VF.png}
+\end{center}
+\caption{SR-IOV interface with Ethernet Virtual Bridge that sorts packets into one of the Virtual Functions and forwards to the Virtual Machine}
+\label{fig-sriov}
+\end{figure}
 
+Consider the scenario where one host is running multiple Virtual Machines (VM) and a NIC receiving and transmitting packets for all those VMs. Without any hardware virtualization, when a packet is received by the NIC, it triggers an interrupt to the CPU core that is assigned for handling NIC interrupts. This core services the request and examines the packet. Based on the MAC address or VLAN tag, it forwards the packet to the correct VM by triggering another interrupt on the core that is servicing the virtual machine. This is an overhead since there are multiple interrupt handling in the host even before the packet is transferred to the guest operating system and also there is an extra copy of the packet buffer from the host to the VM. Moreover, when the packet rate is high, one core handling all the packets for all the VMs can be a severe bottle neck. As an enhancement to this, Intel proposed VMDq [1] technology which has separate packet queues for each core. The received packets are put into one of the queues based on the destination MAC or VLAN. Each core services its packet queue by copying the buffer to the VM. There is distribution of work here and a good performance enhancement. An even further enhancement is SR-IOV in which the NIC has separate packet queues for each Virtual Function. When a packet is received, it is sorted to one of the VF queues based on the destination MAC address or VLAN tag by a virtual bridge or classifier. The VF then pushes the packet up the virtual machine directly without involving the CPU using Direct Memory Access (DMA). SR-IOV needs CPU I/O virtualization technology such as Intel VT-d or AMD-Vi enabled for the DMA to the virtual machine. Figure \ref{fig-sriov} depicts the functioning of Virtual Functions in SR-IOV.
 %% [1] https://www.intel.com/content/www/us/en/virtualization/vmdq-technology-paper.html
+
 \subsection{Container}
 A container is an isolated execution environment which includes any necessary run time dependencies and libraries needed for the application that it packages. It could be thought of as a software that runs on the host with its own slice of the system resources such as network, file systems, user groups, etc. but isolated from other processes. Containers are built on namespaces and control groups which are a part of the Linux kernel.
 
-As per Linux man pages, namespace is an abstraction layer on "global system resources" that provides isolated instance of the resource to the processes that are members of the namespace. Linux provides six different namespaces, Inter Process Communication (IPC) including POSIX and System V message queues, Network, Mount, Process Identifier (PID), User and UTS [1]. With network namespace, the processes in the new namespace can add new network devices without them being available to host network namespace and vice versa. Similarly, with mount namespace, different file systems can be mounted and processes within this namespace cannot access host file system. Namespaces can be created using Linux system call unshare. The context of namespaces that every process belongs to stored in a sub-folder under proc file system as shown below.
+As per Linux man pages, namespace is an abstraction layer on "global system resources" that provides isolated instance of the resource to the processes that are members of the namespace. Linux provides six different namespaces, Inter Process Communication (IPC) including POSIX and System V message queues, Network, Mount, Process Identifier (PID), User and UTS [1]. With network namespace, the processes in the new namespace can add new network devices without them being available to host network namespace and vice versa. Similarly, with mount namespace, different file systems can be mounted and processes within this namespace cannot access other host file system. Namespace can be created using Linux system call \lstinline{unshare}. The context of namespace that every process belongs to stored in a sub-folder under proc file system as shown below.
 %% [1] Linux man paages; man 7 namespaces; man unshare
+
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
 $ ls -l /proc/$$/ns | awk '{print $1"\t"$(NF-2)$(NF-1)$NF}'
 lrwxrwxrwx      cgroup->cgroup:[4026531835]
@@ -491,7 +501,7 @@ lrwxrwxrwx      uts->uts:[4026531838]
 
 \end{lstlisting}
 
-Below is an example of using namespaces to create an isolated environment. The current process id in a bash shell can be found out using "\$\$". Then use unshare command to create a new namespace. Here the arguments "pid" and "net" signifies new namespaces for process ids and network. The argument "mount-proc" tells the command to mount the proc file system. The "fork" option makes a fork of the current process before creating the namespace and attaching the child process to it. 
+Below is an example of using namespace to create an isolated environment. The current process id in a bash shell can be found out using \lstinline{$$}. Then use \lstinline{unshare} command to create a new namespace. Here the arguments "pid" and "net" signifies new namespaces for process identifier and network. The argument "mount-proc" tells the command to mount the proc file system. The "fork" option makes a fork of the current process before creating the namespace and attaches the child process to it. 
 
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
 $ echo $$ 
@@ -507,6 +517,13 @@ root         1     0  0 13:37 pts/26   00:00:00 bash
 root        12     0  0 13:44 pts/30   00:00:00 -bash
 root        32     1  0 13:52 pts/26   00:00:00 ps -aef
 root:~#                                  
+
+\end{lstlisting}
+
+The new namespace created for the container is evident from \lstinline{ip link} command as it does not list any of the interfaces available on the host machine. The command \lstinline{nsenter} can used to enter a namespace. The argument \lstinline{-t} takes process identifier of the target process and joins its namespace. The other arguments correspond to the different namespaces that it should enter[].
+%[] man nsenter
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
 
 $ ps -aef | grep bash | grep root | awk '{print $1"\t"$2"\t"$3"\t"$8}'
 root     31215  8009    sudo
@@ -524,8 +541,7 @@ root:/#
 
 \end{lstlisting}
 
-\texttt{Add a network bridge within the new namespace and check outside.}
-
+As a final step, add a network bridge within the new namespace and it is possible to verify that this bridge is not available in the host namespace.
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
 root:~# brctl addbr asd
 root:~# ip l
@@ -537,23 +553,59 @@ root:~# ip l
     brd ff:ff:ff:ff:ff:ff
 \end{lstlisting}
 
-Control groups on the other hand are useful in limiting the resource consumption. Control groups or cgroups are organized hierarchically. 
+Control groups on the other hand are useful in allocating and limiting resource consumption such as memory, CPU time, network bandwidth etc. Control groups or cgroups are organized hierarchically, child cgroups inherit from parent cgroups. The pseudo file system "sys" is used as an interface to create and manipulate cgroups. To create a new cgroup, create a directory under \lstinline{/sys/fs/cgroup} and set appropriate values. For instance, when a Kubernetes pod is created with Hugepage limited to 4GB as described here [], cgroups creates a directory in \lstinline{/sys/fs/cgroup/hugetlb/kubepods/} and sets value of \lstinline{hugetlb.1GB.limit_in_bytes} to 4294967296 (4GB)
 
-Any description of containers is incomplete without a comparison to virtual machines. A virtual machine emulates an entire machine. There is a hypervisor that runs on the host machine that emulates the underlying hardware. Then a complete operating system running on top of it. The advantage of virtual machine is that it is completely isolated from the host machine. The run environment can be guaranteed in spite of the host hardware and operating system. While at the same time, virtual machines can be heavy weight and resource consuming. In contrast, the container essentially runs completely on the host. It uses namespaces and control groups for isolation of the container from the host. As a result, they are much more easy to boot up, lightweight and picking up in popularity when compared to virtual machines [].
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+$ sudo cat /sys/fs/cgroup/hugetlb/kubepods/hugetlb.1GB.limit_in_bytes 
+4294967296
 
+\end{lstlisting}
+
+Any description of containers is incomplete without a comparison to virtual machines. As depicted in Figure \ref{fig-vm-container}, a virtual machine emulates an entire machine. There is a hypervisor that runs on the host machine that emulates the underlying hardware. Then a complete operating system running on top of it. The advantage of virtual machine is that, it is completely isolated from the host machine. The run environment can be guaranteed in spite of the host hardware and operating system. While at the same time, virtual machines can be heavy weight and resource consuming. In contrast, a container essentially runs completely on the host. It uses namespaces and control groups for isolation of the container from the host. As a result, they are much more easy to boot up, lightweight and picking up in popularity when compared to virtual machines [].
 %% []
 
-is the easy replication of the development environment in scenarios such as in deployment. Containers have become de-facto standard for application packaging/deployment and there is a need to explore fast data processing solutions in a containerized environment.
+\begin{figure}[htb]
+\begin{center}
+\includegraphics[height=8cm,width=15cm]{pics/Container-vm-comparison.png}
+\end{center}
+\caption{Comaprison between virtual machines and containers}
+\label{fig-vm-container}
+\end{figure}
 
 \subsubsection{Container Networking Interface}
-Container Networking Interface is a proposal for 
+Container Networking Interface Specification is a proposal for standardized networking solution for container applications. It is documented in GitHub and has its origins from CoreOS and rkt []. According to this specification, container run-time is responsible for creating the network namespace and the network plugin is an executable that called by the container at run-time. It specifies functions that should be exposed by the network plugin such as ADD, DEL, GET and VERSION. For instance, ADD is invoked with the container identifier, network namespace and other network configurations. This triggers the plugin executable to insert an interface into that namespace as per the configuration. Similarly, DEL is invoked when the container is killed.
 %% https://github.com/containernetworking/cni/blob/master/SPEC.md
 
 \subsection{Kubernetes}
-Kubernetes is an open source orchestration system that manages containerized applications. It can be used for 
+Kubernetes is an open source container orchestration system. It is used for deploying and managing container applications in a cluster. It is a result of evolution of container management system developed by Google internally, known as Borg. Borg was then replaced by Omega and then finally by Kubernetes[1]. It was made open source in 2014 [2].
+% [1] https://queue.acm.org/detail.cfm?id=2898444
+% [2] https://kubernetes.io/docs/concepts/overview/what-is-kubernetes/
 
-k8s architecture (Chapter 4)
-One master and many workers. "Cluster is driven using API calls to controllers" Architecture diagram (https://kubernetes.io/docs/concepts/architecture/cloud-controller/)
+Typically a Kubernetes cluster consists of at least one master node and many worker nodes. The master node is responsible for maintaining the cluster state, managing the resources, scheduling the work load, etc., while the application containers actually run in the worker nodes. The smallest unit that cab be controlled by Kubernetes is a pod. A pod can have multiple containers running within it but all of them share the same namespace. So, if there are multiple containers that need to interact closely, for instance, through inter process communication (IPC), they can be placed in the same pod. Since, the containers in the same pod will share the same IPC namespace.
+
+The various functionalities of a Kubernetes master node are handled by different components such as, API server, controller manager, etcd and scheduler. These components do not necessarily have to be run on one master node but could be run anywhere in cluster. But as a good practise, to support High Availability (HA), it is encouraged to run these control plane components in one node[].
+% [] https://kubernetes.io/docs/setup/independent/high-availability/
+
+\begin{figure}[htb]
+\begin{center}
+\includegraphics[height=8cm,width=15cm]{pics/k8s.png}
+\end{center}
+\caption{Various components Kubernetes master and worker nodes and the way they interact}
+\label{fig-k8s}
+\end{figure}
+
+The API server exposes API's that are used by other control plane components to retrieve, store and manage information about the cluster. It also acts as an endpoint to communication between the cluster and the Kubernetes master.
+
+The Kubernetes scheduler is responsible for scheduling the workload between the worker nodes. Typically when a pod is requested to be deployed, the scheduler considers the resource requests in the pod and runs  filtering and prioritizing functions and binds the pod to the node with the highest priority. The filtering run filters out nodes that cannot support the pod. For instance, if a pod requests for Hugepages and the nodes that do not support Hugepages are filtered out. The priority function does some load balancing between the worker nodes.
+
+etcd is the database that stores Kubernetes cluster information about. The API server is the only component that interacts with etcd.
+
+Controllers in Kubernetes monitor the state of various resources and try to bring them to the desired state. For instance, the replication controller makes sure the desired number of pods are running in the cluster. If there are too many, the unnecessary ones are killed and if there are fewer, the required number of pods are created. The collection of all such controllers into one application is the controller manager. There is also a cloud controller manager in the Kubernetes master that interacts with the underlying cloud provider.
+
+Kubernetes worker nodes contain kubelet, kube-proxy and the container run-time Docker. Kubelet manages the pods running in a node. It receives the pod configuration from the API server and deploys the pod. It also sends back logs. It is used for connecting to a pod, for instance through the \lstinline{kubectl exec} command.
+
+Kube-proxy handles the networking part of the worker nodes. Implements iptable rules for prot forwarding and exposing service.
+% (https://kubernetes.io/docs/concepts/architecture/cloud-controller/)
 
 Components : Master, worker nodes and Controllers, Services, Pods, Namespaces, Network and Storage
 
@@ -565,6 +617,27 @@ Scheduler decides which node to deploy the pod. Decision is  based on an algorit
 ---- No more detailed writing
 k8s worker has kublet and kube-proxy
 Kubelet for local configurations
+
+\subsection{Open vSwitch}
+Open vSwitch is an open source implementation of a virtual switch which is designed for virtualized environments such as a data center. In essence, it could be considered as a "feature rich" Linux bridge[1].
+
+The main components of OvS are the database server, the main process daemon or\lstinline{ovs-vswitchd} and a data path which is normally a kernel module. Apart from these main components, OvS uses mainly three protocols for communicating between them, viz., OVSDB management protocol[2], OpenFlow and Netlink. The way these components interact along with management tools is depicted in Figure \ref{fig-ovs}
+% [1] https://github.com/openvswitch/ovs/blob/master/Documentation/intro/why-ovs.rst
+% [2] https://tools.ietf.org/html/draft-pfaff-ovsdb-proto-00
+
+\begin{figure}[htb]
+\begin{center}
+\includegraphics[height=8cm, width=15cm]{pics/ovs.png}
+\end{center}
+\caption{Various components in Open vSwitch separated into management layer, userspace and kernel}
+\label{fig-ovs}
+\end{figure}
+
+The database server or \lstinline{ovsdb-server} is a persistent storage of OvS configuration. It is configured using an external configuration tool such as the OvS CLI tool \lstinline{ovsdb-tool} or \lstinline{ovs-vsctl}. The former is primer for configuring the database while the latter is for configuring the switch. The database server communicates with \lstinline{ovs-vswitchd} to exchange configuration information using OVSDB management protocol.
+
+The main process daemon, \lstinline{ovs-vswitchd}, is responsible for the managing all OvS bridges in the machine. Network flows are installed using an external controller such as \lstinline{ovs-ofctl}. It then installs these flows in the data path or the kernel module using Netlink.
+
+In this thesis, OvS is configured to run on DPDK. This implies, instead of the kernel module, the forwarding plane resides on the user space. The physical interfaces use Poll Mode Drivers (PMD) running in the user space. 
 
 \clearpage
 \section{Related work and Misc}
@@ -580,7 +653,7 @@ This section covers the actual experimentation part of the thesis with the motiv
 The remaining subsections consider only a cluster environment with Kubernetes. For a fast data path in this case, multiple scenarios have been considered and some potential solutions discussed and experimented with. For this, initially a Kubernetes cluster is built on bare metal using MAAS (Metal-as-a-Service) and \lstinline{kubeadm} or Juju. Then the different scenarios are outlined and discussed one after the other in a detailed manner.
 
 \subsection{Container on DPDK and SR-IOV}
-A default docker container built on a bare Ubuntu image creates by default one interface that is connected to "docker0" bridge on the host. This is the default networking option in Docker []. 
+A default docker container built on a bare Ubuntu image creates by default one interface that is connected to "docker0" bridge on the host. This is the default networking option in Docker [].
 %% https://docs.docker.com/network/#scope-of-this-topic
 
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
@@ -617,18 +690,18 @@ $ ip a | grep -A 3 docker0
 
 Docker supports other networking options such as host, overlay, macvlan. Host networking option in Docker removes the network isolation between the host and the container. Overlay is an overlay network and can be used to connect to other containers in different host managed by Docker swarm. Macvlan assigns a MAC address to the virtual interface in the container and exposes it to a parent host physical interface making it look like a real physical interface. All of the above options are suited for specific use cases. The final option in Docker networking, using network plugins, is the most interesting one. It is an interface to use third part networking plugins, or CNI plugins. The open source CNI plugins for SR-IOV and DPDK could be used to explore fast data path networking in containers.
 
-The test setup consists of two physical machines. Both the machines have a management interface and two SR-IOV interfaces each. The SR-IOV interfaces are connected in back to back forming a closed loop as show in the figure below.
+The test setup consists of two physical machines. Both the machines have a management interface and two SR-IOV interfaces each. The SR-IOV interfaces are connected in back to back forming a closed loop as show in Figure \ref{fig-test-sriov-dpdk}.
 \begin{figure}[htb]
 \begin{center}
 \includegraphics[height=8cm]{pics/ContainerOnDPDKandSRIOV.png}
 \end{center}
 \caption{Test topology. DPDK based pktgen on one side and a Docker container with DPDK and SR-IOV on the other.}
-\label{liitekuva}
+\label{fig-test-sriov-dpdk}
 \end{figure}
 
 One of the machines is used as a packet generator while the other one utilizes virtualization of SR-IOV to push the packet directly to the container. The container also runs a DPDK application that just forwards the packets received on one port to the other. To run DPDK based application, enable SR-IOV Virtual Functions and use CNI plugins with Docker, the host environment has to be configured as described below.
 
-For running DPDK based applications, hugepages should be enabled in the host machine. The hugepage sizes that supported in the most common Linux distributions are 2MB and 1GB. If 1GB hugepages are to be used, it is recommended to have them configured at boot time by setting some Kernel boot parameters. This it to ensure the availability of such a large contiguous memory, 1GB, in main memory. This is mostly not possible at run time due to fragmentation. The kernel boot parameters could be set by editing \lstinline{/etc/default/grub} and updating GRUB with \lstinline{update-grub} command. For instance, edit \lstinline{GRUB_CMDLINE_LINUX} to include, \lstinline{GRUB_CMDLINE_LINUX="default_hugepagesz=1G hugepagesz=1G hugepages=4"}. Now update GRUB, reboot machine and check boot parameters and consequently hugepage availability as follows,
+For running DPDK based applications, hugepages should be enabled in the host machine. The hugepage sizes that supported in the most common Linux distributions are 2MB and 1GB. If 1GB hugepages are to be used, it is recommended to have them configured at boot time by setting some kernel boot parameters. This it to ensure the availability of such a large contiguous memory, 1GB, in main memory. This is mostly not possible at run time due to fragmentation. The kernel boot parameters could be set by editing \lstinline{/etc/default/grub} and updating GRUB with \lstinline{update-grub} command. For instance, edit \lstinline{GRUB_CMDLINE_LINUX} to include, \lstinline{GRUB_CMDLINE_LINUX="default_hugepagesz=1G hugepagesz=1G hugepages=4"}. Now update GRUB, reboot machine and check boot parameters and consequently hugepage availability as follows,
 
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
 $ cat /proc/cmdline 
@@ -641,9 +714,9 @@ HugePages_Surp:        0
 Hugepagesize:    1048576 kB
 \end{lstlisting}
 
-The hugepages have to be mounted on the host. In some versions of Linux distributions, for instance, in Ubuntu 16.04 and higher, they are mounted automatically in \lstinline{/dev/hugepages}. It is also possible to isolate the CPU cores that will be used for the DPDK application using boot paramters so that the Kernel scheduler does not use them. For instance, \lstinline{GRUB_CMDLINE_LINUX="default_hugepagesz=1G hugepagesz=1G hugepages=4 isolcpus=2,3,4,5,6,7"}
+The Hugepages have to be mounted on the host. In some versions of Linux distributions, for instance, in Ubuntu 16.04 and higher, they are mounted automatically in \lstinline{/dev/hugepages}. It is also possible to isolate the CPU cores that will be used for the DPDK application using boot paramters so that the kernel scheduler does not use them. For instance, \lstinline{GRUB_CMDLINE_LINUX="default_hugepagesz=1G hugepagesz=1G hugepages=4 isolcpus=2,3,4,5,6,7"}
 
-DPDK supports different Linux Kernel drivers such as UIO, VFIO, etc. []. VFIO is used in most of the cases in the thesis since, as stated in DPDK documentation, it is "more robust and secure" []. VFIO kernel module if supported, is shipped with the OS. It also needs IO virtualization such as Intel VT-d and that needs to be enabled in BIOS. IOMMU has to be set as a Kerenel boot parameter,
+DPDK supports different Linux kernel drivers such as UIO, VFIO, etc. []. VFIO is used in most of the cases in the thesis since, as stated in DPDK documentation, it is "more robust and secure" []. VFIO kernel module if supported, is shipped with the OS. It also needs IO virtualization such as Intel VT-d and that needs to be enabled in BIOS. IOMMU has to be set as a Kerenel boot parameter,
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
 $ cat /proc/cmdline 
 BOOT_IMAGE=/boot/vmlinuz-4.4.0-131-generic default_hugepagesz=1G hugepagesz=1G hugepages=4 intel_iommu=on
@@ -702,7 +775,7 @@ $ cat /etc/cni/net.d/10-sriov-dpdk.conf
 }
 \end{lstlisting}
 
-In the configuration above, \lstinline{type} is always \lstinline{sriov} for this plugin, \lstinline{if0} is the name of the SR-IOV interface or PF, \lstinline{if0name} is the name inside the container and within dpdk parameters, \lstinline{kernel_driver} is the current Kernel driver the interface is using, \lstinline{dpdk_driver} is the DPDK driver that needs to be used, such as VFIO and \lstinline{dpdk_tool} is a tool that is shipped with DPDK source code that can be used to binding interfaces to DPDK. The above configuration could be replicated with different \lstinline{if0} and \lstinline{if0name} for the VF from second SR-IOV interface.
+In the configuration above, \lstinline{type} is always \lstinline{sriov} for this plugin, \lstinline{if0} is the name of the SR-IOV interface or PF, \lstinline{if0name} is the name inside the container and within dpdk parameters, \lstinline{kernel_driver} is the current kernel driver the interface is using, \lstinline{dpdk_driver} is the DPDK driver that needs to be used, such as VFIO and \lstinline{dpdk_tool} is a tool that is shipped with DPDK source code that can be used to binding interfaces to DPDK. The above configuration could be replicated with different \lstinline{if0} and \lstinline{if0name} for the VF from second SR-IOV interface.
 %% [] https://github.com/intel/sriov-cni
 
 To run DPDK application in the container, the container has to be run in privileged mode so that it bind the interfaces, get hugepage information, etc. This can be done with the \lstinline{--privileged} flag in Docker. Also, the hugepage mount location has to be mounted in the container as a volumn. Docker run command is as follows,
@@ -750,7 +823,7 @@ The default networking provided with Docker, using \lstinline{docker0} bridge is
 
 This section uses OvS with DPDK and a container with DPDK application, testpmd on one side. Both the SR-IOV interfaces are this time connected to the OvS bridge. The other packet generator side is unchanged as the previous test scenario.
 
-OvS releases page[1] notes the compatible versions of DPDK with OvS and also the compatible version of OvS for different Linux Kernel versions. In this experiment, the Linux Kernel version used is \lstinline{4.4.0-131-generic}. Correspondingly, the latest compatible version of OvS is 2.9.x and DPDK version compatible this version of OvS is 17.11.3
+OvS releases page[1] notes the compatible versions of DPDK with OvS and also the compatible version of OvS for different Linux kernel versions. In this experiment, the Linux kernel version used is \lstinline{4.4.0-131-generic}. Correspondingly, the latest compatible version of OvS is 2.9.x and DPDK version compatible this version of OvS is 17.11.3
 %% [1] http://docs.openvswitch.org/en/latest/faq/releases/
 
 To use Open vSwitch (OvS) with DPDK data path, DPDK needs to be built as in normal scenario but with the correct version as described above. The environment variables \lstinline{RTE_SDK} and \lstinline{RTE_TARGET} should be set. The former is the path to DPDK source code and the later is the build target environment, or \lstinline{x86_64-native-linuxapp-gcc} in this case. The OvS needs to be configured with \lstinline{--with-dpdk="$RTE_SDK/$RTE_TARGET"} and compiled.
@@ -762,9 +835,10 @@ sudo ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
 sudo ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask=0x0F
 sudo ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem=256
 sudo ovs-vsctl --no-wait set Open_vSwitch . external-ids:system-id="${HOSTNAME}id"
+
 \end{lstlisting}
 
-The system ID could come in handy when setting up an overlay network with OvS. Most other steps in setting up OvS with DPDK are quite straighforward or well documented and not listed here.
+The system ID could come in handy when setting up an overlay network with OvS. Most other steps in setting up OvS with DPDK are quite straightforward or well documented and not listed here.
 
 The final part of the previous section had a Linux bridge with interfaces attached to it and packets forwarded as a normal bridge would do, flood. In this test, something similar in theory is done with an OvS bridge. But, the interfaces are bound to DPDK and then attached to an OvS bridge. Also couple of flows are added to the bridge to forward the packets received on one interface to the other and vice versa instead of flooding. The commands are shown in detail below.
 
@@ -778,7 +852,15 @@ $ ovs-ofctl add-flow ext1 in_port=1,action=output:2
 
 Now from the other end, packets were generated at an average of 10Mpps and the latency was observed to be around 800 micro seconds. This is the same value of latency observed in the previous section with SR-IOV VF exposed to a container and a DPDK based application running on a container. This shows that OvS running as a DPDK application does not add any additional latency. Also, counter intuitively, a container running DPDK application gives same latency as OvS on DPDK. This implies, a container as such does not add any latency to slow down the processing of packets. Which it should not theoretically as well.
 
-Now, the next logical step is to add a container in between the two interfaces and forward the packets to a DPDK application, testpmd, running inside the container and forward the packets back to the packet generator. To expose DPDK interfaces to a container via. OvS, OvS uses \lstinline{vhostuser} port on the host side. This creates a UNIX domain socket which needs to be exposed to the container. In DPDK application, a \lstinline{virtiouser} port is created using this socket file. Now, flows are added to forward packets between the DPDK interface and \lstinline{vhostuser} ports. The packets received at \lstinline{vhostuser} will be picked by \lstinline{virtiouser} and thus the DPDK application.
+\begin{figure}[htb]
+\begin{center}
+\includegraphics[height=8cm]{pics/Container-ovs-dpdk.png}
+\end{center}
+\caption{Test topology with OvS DPDK running on userspace and forwarding packets to a container using vhostuser ports}
+\label{fig-test-ovs-dpdk}
+\end{figure}
+
+Now, the next logical step is to add a container in between the two interfaces and forward the packets to a DPDK application, testpmd, running inside the container and forward the packets back to the packet generator as shown in Figure \ref{fig-test-ovs-dpdk}. To expose DPDK interfaces to a container via. OvS, OvS uses \lstinline{vhostuser} port on the host side. This creates a UNIX domain socket which needs to be exposed to the container. In DPDK application, a \lstinline{virtiouser} port is created using this socket file. Now, flows are added to forward packets between the DPDK interface and \lstinline{vhostuser} ports. The packets received at \lstinline{vhostuser} will be picked by \lstinline{virtiouser} and thus the DPDK application.
 
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
 $ ovs-vsctl add-port dpdk-br vhu-p1 -- set Interface vhu-p0 type=dpdkvhostuser
@@ -802,36 +884,80 @@ While running the DPDK application inside container, the PCI devices are disable
 Now, as before, the other host starts sending packets at 11Mpps and the latency was observed to be approximately 5000 micro seconds.
 
 \subsection{Fast packet processing in Kubernetes}
-The previous two sections dealt with the networking aspects when containers were hosted on just one  host and packets were generated from another. But in a real scenario, there would be a cluster of many hosts with some container orchestration such as Kubernetes managing them. When a request to deploy a new container or rather a pod, in Kubernetes is received, Kubernetes decides on which host to deploy depending on the requirements to run the pod such as available memory, CPU cores and any other constraints that may be provided. Kubernetes has to find a host that fits all the bills. The networking aspects in such a scenario could get tricky. In a Kubernetes deployed pod, there has to be one management interface to communicate with kubelet, which runs on all the worker nodes. Then, for fast packet processing, some other pod interfaces that are connected to the DPDK bound physical interfaces. These DPDK interfaces could be exposed to the external network.
+The previous two sections dealt with the networking aspects when containers were hosted on just one  host and packets were generated from another. But in a real scenario, there would be a cluster of many hosts with some container orchestration such as Kubernetes managing them. When a request to deploy a new container or rather a pod, in Kubernetes is received, Kubernetes decides on which worker node to deploy depending on the requirements to run the pod such as available memory, CPU cores and any other constraints that may be provided in the pod configuration. Kubernetes has to find a node that fits all the bills. Fast data path could be also be another constraint to be considered while deploying pods. 
 
-Now, when a pod is being deployed in Kubernetes and if it needs external DPDK interfaces, Kubernetes has to decide on which host to deploy the pod. There are three scenarios to be considered here.
+In a Kubernetes deployed pod, there has to be one management interface to communicate with Kubernetes, which runs on all the worker nodes. Then, for fast packet processing, some other pod interfaces that are connected to the DPDK bound physical interfaces. These DPDK interfaces could be exposed to the external network. So, when a pod is being deployed in Kubernetes and if it needs external DPDK interfaces, Kubernetes has to decide on which node to deploy the pod. There are three scenarios to be considered and are described below. Also, note that "external" in external DPDK interfaces only imply they are not managed by Kubernetes.
 
-The first scenario is when the required number of external DPDK interfaces for the pod is present in all of the Kubernetes worker nodes. In this case the pod could be deployed in any of the hosts and this does not become a constraint. The only question to be answered here is how to expose multiple interfaces to a pod. Kubernetes in its default state supports only one interface.
+The first scenario is when the required number of DPDK interfaces for the pod is present in all of the Kubernetes worker nodes. In this case the pod could be deployed in any of the nodes and there is no extra networking constraint to be considered by the scheduler. The only question to be answered here is how to expose multiple interfaces to a pod since a Kubernetes pod in its default state supports only one interface.
 
-The second scenario is when the required external DPDK interaces for the pod are present in just some of the worker nodes. In this case, the Kubernetes scheduler, which runs on the master, needs some mechanism to find out which hosts satisfy this criteria.
+The second scenario is when the required external DPDK interaces for the pod are present in just some of the worker nodes. In this case, the Kubernetes scheduler needs some mechanism to find out which nodes satisfy this criteria and deploy the pod in one of them.
 
-The third scenario is the trickiest. If the required number of DPDK interfaces are say, three, and there are three worker nodes with one DPDK interface each. Here, the decision on which host to deploy the pod cannot be made based on meeting this criteria but rather, there has to be some fast data path between the worker nodes. Earlier it was noted that every Kubernetes pod has a default management interface which is used to communicate with the kubelet running on the worker node. This also implies, there is a management interface on each worker node that is reachable to each other and also the master. This is also one of Kubernetes networking requirements[].
+The third scenario is the trickiest. If the required number of DPDK interfaces are say, three, and there are three worker nodes with one DPDK interface each. The decision on which node to deploy the pod is not important but rather routing the data between the worker nodes. Earlier it was noted that every Kubernetes pod has a default management interface. This could maybe leveraged to route the data packets as well.
 %% [] https://kubernetes.io/docs/concepts/architecture/master-node-communication/
 
-The above three scenarios and their potential solutions are discussed in the next few sections. But first let's build a Kubernetes cluster.
+The above three scenarios and their potential solutions are discussed in the next few sections. But the next immediate section is on how to build a Kubernetes cluster on bare metal.
 
 \subsection{Building a Kubernetes cluster}
-The Kubernets cluster is built from bare metal machines. To build a cluster from these hosts, MAAS or Metal as a Service, is used. MAAS is open source software developed by Canonical[]. MAAS needs a central machine which is the controller. The controller runs a DHCP server. Other nodes to be added to the cluster should be placed in the sub-net and configured to boot from network or PXE boot. The controller was configured to use Ubuntu 16.04 images for commissioning the nodes. The topology of the machines is show in Figure 1. 
+In this section, using bare metal machines, a cluster is formed with local connectivity, a DHCP server to assign dynamic private IP, and a DNS resolver. Then Kubernets is run on this cluster. To build the cluster, MAAS or Metal as a Service, is used. MAAS is an open source software developed by Canonical[]. It helps form a cluster from set of bare metal machines with cloud like features and flexibility.
 %% [] https://www.canonical.com/
+
+MAAS needs a central machine which is the controller. The controller is responsible adding further machines to the cluster, assigning IP address, PXE booting them, etc. The other nodes are generally accessible through the controller. The topology is shown in Figure \ref{fig-maas-topo}. The easiest way to setup the MAAS controller is using a Ubuntu server image and in the install options, choosing MAAS region controller. Another option is to install standard Ubuntu distribution, use the package manager, aptitude and install MAAS. The next step is to configure the controller. Most of the configurations are done using the HTTP server that runs by default on port 5240 on the controller. A MAAS cluster can have two types of controllers, region and rack controller. Since the setup is quite small and the machines are physically attached to the same sub network, just one controller is used which acts both as region and rack controller. 
 
 \begin{figure}[htb]
 \begin{center}
-\includegraphics[height=8cm]{pics/MAAS-topology.png}
+\includegraphics[height=8cm]{pics/maas-topo.png}
 \end{center}
 \caption{Topology of cluster built with MAAS}
-\label{liitekuva}
+\label{fig-maas-topo}
 \end{figure}
 
-A MAAS cluster can have two types of controllers, region and rack controller. Since, the setup being built is quite small and the machines can be physically attached to a subnet using only a bridge, just one controller is used. It acts both as region and rack controller. Adding nodes to the cluster can be done by attaching the new machine to the subnet and setting the interface to PXE boot. The controller sends the boot image through the local area network and runs some cloud init scripts to set up the new machine. The new machine goes into "Ready" state and can be acquired while deploying some application such as Kubernetes. Functioning quite like a cloud. For the nodes to have external connectivity, the controller's IP tables have to be modified to enable NAT.
+Initially, the controller SSH public key will have to be provided to MAAS. This is later used for allowing access for the controller to the other nodes added to the cluster. Next, the version of Ubuntu to be used for deploying the nodes was set to 16.04. For upstream name resolution, the upstream DNS configuration can be set. Also, since DPDK based applications are run Kubernetes and some of the non-management interfaces in the some of the nodes are SR-IOV, the required Kernel boot parameters can be set. All of these setting are done in the settings page in MAAS controller. 
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+intel_iommu=on iommu=pt default_hugepagesz=1G hugepagesz=1G hugepages=4
+\end{lstlisting}
 
-To deploy Kubernetes, the easiest approach, as documented in[], is to deploy it with Juju. This essentially, deploys a out-of-box Kubernetes with one or more masters, worker nodes and other applications such as etcd, flannel, easyrsa, etc. "etcd" is used to distributed key value storage, "flannel" is the network plugin and "easyrsa" is for generating certificates for TLS. For this approach, Juju needs to be deployed first and it needs a dedicated controller. One way is to start a virtual machine in MAAS controller and add it to the cluster and use it as Juju controller. Another approach would be to use any other node in cluster for this. The choice depends on how machines are available and how many are needed for Kuberentes since Juju controller cannot be in Kubernetes. In this experiment, the virtual machine method was used. Juju was then used to deploy a minimal Kubernetes cluster with two machines using the command, \lstinline{juju deploy cs:bundle/kubernetes-core-251}.
+To allow access to the external network for other nodes in the cluster, the controller will have be configured to use NAT to forward the traffic. For convenience, let the interface connected to the external network in the controller be \lstinline{eth0} and the interface connected to the subnet \lstinline{10.10.10.0/24} be \lstinline{eth1}. The \lstinline{iptable} configurations for NAT'in are as shown below.
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+iptables --table nat --append POSTROUTING --out-interface eth0 -j MASQUERADE
+iptables --append FORWARD --in-interface eth1 -j ACCEPT
+echo 1 > /proc/sys/net/ipv4/ip_forward
+\end{lstlisting}
 
-To deploy a simple pod in Kubernetes, create pod manifest file and use \lstinline{kubectl} commands to create the pod.
+Other nodes to be added to the cluster should be placed in the sub-net. A switch could be connected to the MAAS controller interface \lstinline{eth1}. Other nodes should be connected to the switch using the interface with PXE boot enabled. On booting, the node gets a temporary IP address from the DHCP server running on the controller. The controller then lists the node in the MAAS dashboard. The power type in the node has to be configured. If the node supports IPMI, it will detected automatically. Otherwise, set the power type to "Manual". The disadvantage is that, the machines will have to be powered on/off manually. Now, in the MAAS dashboard, it is possible to commission the node. The machine will boot again, or will have to be done so manually, after which the controller sends the boot images and initialization scripts. The machine finally goes to ready state.
+
+Once all the nodes are added and in "Ready" state, they can be acquired while deploying some application in MAAS. The application of interest here is Kubernetes and the easiest way to deploy Kubernetes on MAAS is using Juju, as documented in[]. A Kubernetes deployment typically has many components that need to be installed. For instance, in the master node, "etcd", "easyrsa" for generating certificates for TLS, kubectl application, some network plugin and of course the core Kubernetes applications such as scheduler, config manager, etc. On the worker nodes, Docker, kublet, the proxy daemon, etc. Juju does a automatic deployment of all the necessary components. But for this, Juju needs to be deployed first and it needs a dedicated controller. One way to do so without consuming an additional machine is to use a virtual machine in MAAS controller and add it to the cluster. It could then be used it as Juju controller. The other way is to  use any other node in MAAS cluster as Juju controller. The choice depends on how machines are available and how many are needed for Kuberentes. In this experiment, the virtual machine method was used initially. Juju can be installed on MAAS with Juju can deploy a minimal Kubernetes cluster with two machines using the command, \lstinline{juju deploy cs:bundle/kubernetes-core-251}. Verify the status of machines go to "active" with the following command and sample output
+
+\begin{lstlisting}[basicstyle={\tiny\ttfamily}]
+
+ubuntu@labmpd3:~$ juju status
+Model    Controller  Cloud/Region  Version  SLA
+default  test-cloud  test-cloud    2.3.8    unsupported 
+
+App                Version  Status  Scale  Charm              Store       Rev  OS      Notes
+easyrsa            3.0.1    active      1  easyrsa            jujucharms   27  ubuntu  
+etcd               2.3.8    active      1  etcd               jujucharms   63  ubuntu  
+flannel            0.9.1    active      2  flannel            jujucharms   40  ubuntu  
+kubernetes-master  1.9.8    active      1  kubernetes-master  jujucharms   78  ubuntu  exposed
+kubernetes-worker  1.9.8    active      1  kubernetes-worker  jujucharms   81  ubuntu  exposed 
+
+Unit                  Workload  Agent  Machine  Public address  Ports           Message
+easyrsa/0*            active    idle   0/lxd/0  10.10.10.8                      Certificate Authority connected.
+etcd/0*               active    idle   0        10.10.10.6      2379/tcp        Healthy with 1 known peer
+kubernetes-master/0*  active    idle   0        10.10.10.6      6443/tcp        Kubernetes master running.
+  flannel/0*          active    idle            10.10.10.6                      Flannel subnet 10.1.18.1/24
+kubernetes-worker/0*  active    idle   1        10.10.10.7      80/tcp,443/tcp  Kubernetes worker running.
+  flannel/1           active    idle            10.10.10.7                      Flannel subnet 10.1.34.1/24
+
+Machine  State    DNS         Inst id              Series  AZ       Message
+
+0        started  10.10.10.6  yda8rf               xenial  default  Deployed
+
+0/lxd/0  started  10.10.10.8  juju-90b946-0-lxd-0  xenial  default  Container started
+
+1        started  10.10.10.7  6hn4pg               xenial  default  Deployed
+\end{lstlisting}
+
+Following is a hello world example to test the Kubernetes deployment. To deploy a simple pod in Kubernetes, create pod manifest file and use \lstinline{kubectl} commands to create the pod.
 
 \begin{lstlisting}[basicstyle={\small\ttfamily}]
 $ cat > helloworld.yaml <<EOF
@@ -854,14 +980,77 @@ $ kubectl logs test-pod
 SUCCESS
 \end{lstlisting}
 
-Another way to deploy Kubernetes is using the tool \lstinline{kubeadm}. This is a Kubernetes project that is still in beta stage but quite good for development purposes. The deployment of Kubernets is quite bare minimalistic while comapred to deploying with Juju. This gives a bit more control. With \lstinline{kubeadm}, the network has to be installed separately which is ideal for most of the work in the thesis since, it can be easily tweaked and modified.
-
+Another way to deploy Kubernetes is using the tool \lstinline{kubeadm}. This is a Kubernetes project that is still in beta stage but quite good for development purposes. This deployment of Kubernets is quite minimalistic while comapred to deploying with Juju. This gives a bit more control. With \lstinline{kubeadm}, the network plugin has to be installed separately which is ideal for most of the work in the thesis since, it can be easily tweaked and modified.
 
 \subsection{Scenario 1, Multus}
+This section covers in detail the first scenario described above where all the worker nodes in the Kubernetes cluster have DPDK supported interfaces. The scheduling decision is hence unaffected by the worker node interface hardware features and the normal scheduling decision could be made based on the CPU, memory  and any other resource availability.
+
+To use the DPDK interfaces in a pod, a Container Network Interface (CNI) plugin called "Multus" can be used. It is an open source and developed by Intel[] and written in Golang. Multus acts as an interface between Kubernetes and other CNI plugins. It reads the required networking requirement from a configuration file which specifies which other CNI plugins to use along with their individual configuration. It then looks for these CNI plugin executable in a specific location and runs them with the given configuration. Consequently exposing the CNI plugin based interfaces to the pod. Multus also maintains one interface for Kubernetes related communication. This is called the master plugin. In essence, if CNI plugin, say P1 needs to be called with configuration C1 and another CNI plugin P2 with configuration C2, the user gives these configuration to Multus and Multus calls these individual CNI plugins one after the other exposing it to the pod.
+% https://github.com/intel/multus-cni
+
+The SR-IOV with DPDK CNI Plugin used in section 4.1 and Flannel can be used with Multus for this case. Here Flannel is the master plugin used for Kubernetes management interfaces and SR-IOV DPDK plugin is for fast packet processing and latency measurements.
+% https://github.com/intel/sriov-cni
+
+There are couple of different ways of using Multus. Kubernetes allows users to define custom resource types, called Custom Resource Definition (CRD). The first approach involves defining a new network resource as a CRD and specifying the plugin configurations while defining the resource objects. The other option is to have a CNI configuration file in each of the worker node with the required configuration. The second method has a disadvantage that all the pods running in a worker will use the same configuration file and it is not possible to customize the network per pod. Since a generic solution is really not needed for the targeted latency measurements, the second approach is used. Multus configuration file is below.
+
+\begin{lstlisting}[basicstyle={\small\ttfamily}]
+
+$ cat /etc/cni/net.d/10-multus.conf
+{
+    "name": "multus-demo-network",
+    "type": "multus",
+    "delegates": [
+       {
+            "type": "flannel",
+            "masterplugin": true,
+            "delegate": {
+                "isDefaultGateway": true
+            }
+        },
+        {
+            "type": "sriov",
+            "name": "net1",
+            "if0": "enp1s0f1",
+            "if0name": "if0",
+            "dpdk": {
+                "kernel_driver":"ixgbevf",
+                "dpdk_driver":"igb_uio",
+                "dpdk_tool":"\$RTE_SDK/usertools/dpdk-devbind.py"
+            }
+        },
+        {
+            "type": "sriov",
+            "name": "net2",
+            "if0": "enp1s0f2",
+            "if0name": "if1",
+            "dpdk": {
+                "kernel_driver":"ixgbevf",
+                "dpdk_driver":"igb_uio",
+                "dpdk_tool":"\$RTE_SDK/usertools/dpdk-devbind.py"
+            }
+        }
+    ]
+}
+
+\end{lstlisting}
+
+The experiment in this section is similar to the previous sections with a packet generator on one side sending and receiving packets and calculating the latency. But this time on the other side is a Kubernetes cluster with the SR-IOV interfaces from the packet generator directly connected to one of worker node. The SR-IOV VFs are exposed to the Kubernets pod using Multus and other CNI plugins. Here the idea is to measure the latency when all the Kubernets worker nodes have DPDK interfaces. The experiment is quite similar to the one in Section 4.1 but instead of a Docker container, a Kubernets pod is used and Multus is used for multiple interfaces.
+
+The latency measurements were found to be around 800 micro seconds, similar to the values in Section 4.1. This is quite expected since pod and Multus do not really cause any overhead.
+
 \subsection{Scenario 2, Node feature discovery}
-Kubernetes incubator project - Node Feature Discovery
+In this scenario, only some of the Kubernetes worker nodes may have the required number of DPDK interfaces and the pod needs to be deployed in such a node. To achieve this, Kubernetes scheduler should be aware of nodes that support DPDK or SR-IOV interfaces. There is a Kuberentes incubator project called "Node Feature Discovery" [] that does exactly this, discovering different hardware features supported by the worker nodes.
+
+
+
+
+
+
 \subsection{Scenario 3, Kubernetes with OVN}
 Exposing external interface and routing within
+Big section
+
+
 
 %% http://docs.openvswitch.org/en/latest/howto/userspace-tunneling/
 
@@ -890,7 +1079,6 @@ There are different ways to affect the scheduling decision in Kubernetes. One wa
 The source code scheduler implemented for the thesis is listed in Appendix \ref{LiiteA}. The scheduler communicates with the Kubernetes API server using the \lstinline{kubeconfig} file or it could be run as a pod in the cluster. It initially gets a list of nodes in the cluster and pods that are configured to use scheduler with name \lstinline{latency-scheduler}. It then runs the scheduling algorithm, finds the node that satisfies the latency requirement and sends a Bind message to the API server to bind the pod to that node. From a pod perspective, to use this scheduler, the scheduler name and latency requirements have to be specified in the manifest.
 
 The second important factor to be addressed for the scheduler to work is to discover the hardware features of the worker nodes; specifically the support for DPDK and SR-IOV interfaces. For this, a daemon set is used[]. A Daemon set runs on all the nodes in Kubernetes. This could be utilized to fetch the interface hardware information and report to the API server. The code to implement this daemon set is listed in Appendix \ref{LiiteB} along with the daemon set manifest file and the Dockerfile to build a Golang container with the application. The code currently adds a new \lstinline{map} entry of \lstinline{dpdk:<number-of-dpdk-interfaces>} to \lstinline{node.Labels} [2] where \lstinline{node} is an object of the \lstinline{Node} structure in Kubernetes Core v1. This information is in turn used by the scheduler.
-
 % https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/
 % https://godoc.org/k8s.io/api/core/v1#Node
 
